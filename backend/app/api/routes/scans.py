@@ -78,3 +78,85 @@ def start_scan(scan_id: str):
     run_tools_for_scan(scan_path)
 
     return {"scan_id": scan_id, "status": "DONE", "stage": "RUN_TOOLS"}
+
+from pathlib import Path
+import json
+from fastapi import APIRouter, HTTPException
+
+router = APIRouter()
+
+BASE_STORAGE = Path(__file__).resolve().parents[3] / "storage" / "scans"  # adjust if your file depth differs
+
+
+def _read_json_safe(path: Path):
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+@router.get("/scans/{scan_id}/results")
+def get_scan_results(scan_id: str):
+    scan_path = BASE_STORAGE / scan_id
+    if not scan_path.exists():
+        raise HTTPException(status_code=404, detail="scan_id not found")
+
+    raw_dir = scan_path / "raw"
+    norm_dir = scan_path / "normalized"
+    metrics_dir = scan_path / "metrics"
+    score_dir = scan_path / "score"
+    ai_dir = scan_path / "ai"
+
+    # Core artifacts
+    flake8_raw = _read_json_safe(raw_dir / "flake8.json")
+    bandit_raw = _read_json_safe(raw_dir / "bandit.json")
+    runner_done = _read_json_safe(raw_dir / "runner_done.json") or _read_json_safe(raw_dir / "runner_done.json")
+
+    flake8_norm = _read_json_safe(norm_dir / "flake8.normalized.json")
+    bandit_norm = _read_json_safe(norm_dir / "bandit.normalized.json")
+
+    metrics = _read_json_safe(metrics_dir / "metrics.json")
+    score = _read_json_safe(score_dir / "score.json")
+
+    # Error files (optional)
+    postprocess_error = _read_json_safe(raw_dir / "postprocess_error.json")
+    runner_warnings = _read_json_safe(raw_dir / "runner_warnings.json")
+
+    # Build status
+    status = "CREATED"
+    if runner_done:
+        status = "DONE"
+    if postprocess_error:
+        status = "POSTPROCESS_FAILED"
+
+    # Small summary (safe defaults)
+    summary = {
+        "flake8_issues": (flake8_norm or {}).get("counts", {}).get("total", None),
+        "bandit_issues": (bandit_norm or {}).get("counts", {}).get("total", None),
+        "final_score": (score or {}).get("final_score", None),
+    }
+
+    return {
+        "scan_id": scan_id,
+        "status": status,
+        "summary": summary,
+        "raw": {
+            "flake8": flake8_raw,
+            "bandit": bandit_raw,
+            "runner_done": runner_done,
+            "runner_warnings": runner_warnings,
+            "postprocess_error": postprocess_error,
+        },
+        "normalized": {
+            "flake8": flake8_norm,
+            "bandit": bandit_norm,
+        },
+        "metrics": metrics,
+        "score": score,
+        "ai": {
+            # placeholder for future: ai_dir / "ai.json"
+            "exists": ai_dir.exists(),
+        },
+    }
