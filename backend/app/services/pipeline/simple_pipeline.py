@@ -8,7 +8,11 @@ from app.services.runners.bandit_runner import run_bandit
 from app.services.runners.flake8_runner import run_flake8
 from app.services.runners.runner_utils import write_json
 
-from app.services.processors.normalize import normalize_flake8, normalize_bandit
+from app.services.processors.normalize import (
+    normalize_flake8,
+    normalize_bandit,
+    build_unified_issues,
+)
 from app.services.processors.metrics import build_metrics
 from app.services.scoring.scoring import compute_score
 
@@ -29,9 +33,28 @@ def _write_json(p: Path, data: Any) -> None:
     p.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
+def _to_scan_rel_path(path_str: str, scan_path: Path) -> str:
+    """
+    Convert absolute file paths into scan-relative paths.
+    Example:
+      /Users/.../storage/scans/<id>/input/x.py -> input/x.py
+    """
+    if not path_str:
+        return path_str
+
+    try:
+        return Path(path_str).relative_to(scan_path).as_posix()
+    except Exception:
+        s = str(path_str)
+        marker = "/input/"
+        if marker in s:
+            return "input/" + s.split(marker, 1)[1]
+        return s
+
+
 # -----------------------------
 # Post-processing step
-# raw -> normalized -> metrics -> score
+# raw -> normalized -> unified -> metrics -> score
 # -----------------------------
 def postprocess_scan(scan_path: Path) -> Dict[str, Any]:
     """
@@ -42,7 +65,8 @@ def postprocess_scan(scan_path: Path) -> Dict[str, Any]:
     Produces:
       normalized/flake8.normalized.json
       normalized/bandit.normalized.json
-      metrics/metrics.json
+      normalized/unified_issues.json          ✅ NEW
+      metrics/metrics.json                    ✅ UPDATED (analytics)
       score/score.json
     """
     raw_dir = scan_path / "raw"
@@ -50,18 +74,43 @@ def postprocess_scan(scan_path: Path) -> Dict[str, Any]:
     metrics_dir = scan_path / "metrics"
     score_dir = scan_path / "score"
 
+    # Read raw outputs
     flake8_raw = _read_json(raw_dir / "flake8.json") or []
     bandit_raw = _read_json(raw_dir / "bandit.json") or {}
 
+    # Normalize per-tool
     flake8_norm = normalize_flake8(flake8_raw)
     bandit_norm = normalize_bandit(bandit_raw)
 
+    # Write per-tool normalized
     _write_json(norm_dir / "flake8.normalized.json", flake8_norm)
     _write_json(norm_dir / "bandit.normalized.json", bandit_norm)
 
-    metrics = build_metrics([flake8_norm, bandit_norm])
+    # -----------------------------
+    # ✅ Unified issues
+    # -----------------------------
+    unified = build_unified_issues(flake8_norm, bandit_norm)
+
+    # ✅ Fix unified file paths to be scan-relative (input/...)
+    for it in unified:
+        if isinstance(it, dict) and it.get("file"):
+            it["file"] = _to_scan_rel_path(str(it["file"]), scan_path)
+
+    _write_json(norm_dir / "unified_issues.json", unified)
+
+    # -----------------------------
+    # ✅ Metrics (NOW uses unified issues)
+    # This enables:
+    # - Top 5 Refactor Priority
+    # - Heatmap
+    # - Most Recurring Issues
+    # -----------------------------
+    metrics = build_metrics([flake8_norm, bandit_norm], unified_issues=unified)
     _write_json(metrics_dir / "metrics.json", metrics)
 
+    # -----------------------------
+    # Score (still based on totals+loc from metrics)
+    # -----------------------------
     score = compute_score(metrics)
     _write_json(score_dir / "score.json", score)
 
@@ -69,6 +118,7 @@ def postprocess_scan(scan_path: Path) -> Dict[str, Any]:
         "normalized_files": [
             str(norm_dir / "flake8.normalized.json"),
             str(norm_dir / "bandit.normalized.json"),
+            str(norm_dir / "unified_issues.json"),
         ],
         "metrics_file": str(metrics_dir / "metrics.json"),
         "score_file": str(score_dir / "score.json"),
@@ -119,14 +169,10 @@ def run_tools_for_scan(scan_path: Path) -> Dict[str, Any]:
 
     write_json(raw_dir / "runner_done.json", {"status": "DONE"})
 
-    # 2) Postprocess raw -> normalized/metrics/score
+    # 2) Postprocess raw -> normalized/unified/metrics/score
     try:
         post = postprocess_scan(scan_path)
         return {"status": "DONE", "postprocess": post}
     except Exception as e:
-        # If postprocess fails, record it (so debugging is easy)
-        write_json(
-            raw_dir / "postprocess_error.json",
-            {"error": str(e)},
-        )
+        write_json(raw_dir / "postprocess_error.json", {"error": str(e)})
         return {"status": "FAILED", "reason": "POSTPROCESS_ERROR", "error": str(e)}

@@ -2,24 +2,27 @@ import json
 from typing import Any, Dict, List
 
 
-def normalize_flake8(raw: Any) -> Dict[str, Any]:
-    """
-    Accepts flake8 raw output in either format:
-      A) dict: { "file.py": [ {code, line_number, ...}, ... ], ... }   (your current runner format)
-      B) list: [ {filename, code, line_number, ...}, ... ]
-      C) str:  JSON string of A or B
+# -----------------------------
+# Helpers
+# -----------------------------
 
-    Returns normalized dict:
-      {
-        "tool": "flake8",
-        "issues": [
-          {"file": "...", "line": 1, "col": 2, "code": "W292", "message": "..."},
-          ...
-        ],
-        "counts": {"total": N, "by_code": {...}}
-      }
-    """
-    # If string, try parse JSON
+def _map_flake8_category(code: str) -> str:
+    if not code:
+        return "style"
+    if code.startswith("F"):
+        return "bug_risk"
+    if code.startswith(("E", "W")):
+        return "style"
+    if code.startswith("C"):
+        return "maintainability"
+    return "style"
+
+
+# -----------------------------
+# Normalize flake8
+# -----------------------------
+
+def normalize_flake8(raw: Any) -> Dict[str, Any]:
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
@@ -28,109 +31,95 @@ def normalize_flake8(raw: Any) -> Dict[str, Any]:
 
     issues: List[Dict[str, Any]] = []
 
-    # Case A: dict[file -> list[issue]]
     if isinstance(raw, dict):
         for file_path, file_issues in raw.items():
             if not isinstance(file_issues, list):
                 continue
+
             for it in file_issues:
-                if not isinstance(it, dict):
-                    continue
+                code = it.get("code")
+                severity = "low"
+                if code and code.startswith("F"):
+                    severity = "medium"
+
                 issues.append(
                     {
+                        "tool": "flake8",
+                        "rule_id": code,
+                        "category": _map_flake8_category(code),
+                        "severity": severity,
+                        "confidence": None,
                         "file": it.get("filename") or file_path,
                         "line": it.get("line_number"),
-                        "col": it.get("column_number"),
-                        "code": it.get("code"),
                         "message": it.get("text"),
-                        # optional: keep original line text if present
-                        "source_line": it.get("physical_line"),
                     }
                 )
-
-    # Case B: list[issue dict]
-    elif isinstance(raw, list):
-        for it in raw:
-            if not isinstance(it, dict):
-                continue
-            issues.append(
-                {
-                    "file": it.get("filename"),
-                    "line": it.get("line_number"),
-                    "col": it.get("column_number"),
-                    "code": it.get("code"),
-                    "message": it.get("text"),
-                    "source_line": it.get("physical_line"),
-                }
-            )
-
-    # Counts
-    by_code: Dict[str, int] = {}
-    for it in issues:
-        code = it.get("code") or "UNKNOWN"
-        by_code[code] = by_code.get(code, 0) + 1
 
     return {
         "tool": "flake8",
         "issues": issues,
-        "counts": {"total": len(issues), "by_code": by_code},
+        "counts": {"total": len(issues)},
     }
 
 
-def normalize_bandit(raw: Any) -> Dict[str, Any]:
-    """
-    Bandit raw is usually a dict with keys like:
-      { "results": [...], "metrics": {...}, "errors": [...] }
+# -----------------------------
+# Normalize bandit
+# -----------------------------
 
-    Returns normalized dict:
-      {
-        "tool": "bandit",
-        "issues": [
-          {"file":"...", "line": 1, "test_id":"B101", "severity":"LOW", "confidence":"HIGH", "message":"..."},
-          ...
-        ],
-        "counts": {"total": N, "by_severity": {...}, "by_confidence": {...}}
-      }
-    """
+def normalize_bandit(raw: Any) -> Dict[str, Any]:
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
         except Exception:
             raw = {}
 
-    results = []
-    if isinstance(raw, dict):
-        results = raw.get("results") or []
-    if not isinstance(results, list):
-        results = []
-
+    results = raw.get("results", []) if isinstance(raw, dict) else []
     issues: List[Dict[str, Any]] = []
+
     for r in results:
-        if not isinstance(r, dict):
-            continue
+        severity = (r.get("issue_severity") or "low").lower()
+        confidence = (r.get("issue_confidence") or "low").lower()
+
         issues.append(
             {
+                "tool": "bandit",
+                "rule_id": r.get("test_id"),
+                "category": "security",
+                "severity": severity,
+                "confidence": confidence,
                 "file": r.get("filename"),
                 "line": r.get("line_number"),
-                "test_id": r.get("test_id"),
-                "test_name": r.get("test_name"),
-                "severity": r.get("issue_severity"),
-                "confidence": r.get("issue_confidence"),
                 "message": r.get("issue_text"),
-                "more_info": r.get("more_info"),
             }
         )
 
-    by_sev: Dict[str, int] = {}
-    by_conf: Dict[str, int] = {}
-    for it in issues:
-        sev = it.get("severity") or "UNDEFINED"
-        conf = it.get("confidence") or "UNDEFINED"
-        by_sev[sev] = by_sev.get(sev, 0) + 1
-        by_conf[conf] = by_conf.get(conf, 0) + 1
+    loc = 0
+    metrics = raw.get("metrics", {})
+    if isinstance(metrics, dict):
+        totals = metrics.get("_totals")
+        if isinstance(totals, dict):
+            loc = totals.get("loc", 0)
 
     return {
         "tool": "bandit",
+        "loc": loc,
         "issues": issues,
-        "counts": {"total": len(issues), "by_severity": by_sev, "by_confidence": by_conf},
+        "counts": {"total": len(issues)},
     }
+
+
+# -----------------------------
+# Unified Issues Generator
+# -----------------------------
+
+def build_unified_issues(flake8_norm: Dict[str, Any],
+                         bandit_norm: Dict[str, Any]) -> List[Dict[str, Any]]:
+    unified = []
+
+    for issue in flake8_norm.get("issues", []):
+        unified.append(issue)
+
+    for issue in bandit_norm.get("issues", []):
+        unified.append(issue)
+
+    return unified
