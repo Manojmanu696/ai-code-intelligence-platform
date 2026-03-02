@@ -120,28 +120,33 @@ This allows future predictive analytics and risk forecasting.
 
 ---
 
-## 📂 Project Structure
+## 📁 Project Structure
 
-
+```text
 final-folder/
-│
 ├── backend/
-│ ├── app/
-│ │ ├── api/
-│ │ ├── services/
-│ │ └── main.py
-│ └── storage/
-│
+│   ├── app/
+│   │   ├── api/
+│   │   │   └── routes/
+│   │   ├── services/
+│   │   │   ├── pipeline/
+│   │   │   ├── runners/
+│   │   │   └── history/
+│   │   └── main.py
+│   └── storage/                  # runtime scan outputs (ignored in git)
 ├── frontend/
-│ ├── src/
-│ │ ├── components/
-│ │ ├── hooks/
-│ │ ├── pages/
-│ │ └── api/
-│
+│   ├── public/
+│   └── src/
+│       ├── api/
+│       ├── components/
+│       ├── hooks/
+│       ├── pages/
+│       ├── types/
+│       ├── App.tsx
+│       └── main.tsx
 └── docs/
-
-
+    ├── architecture.png
+    └── dashboard.png
 ---
 
 ## ⚙️ How to Run
