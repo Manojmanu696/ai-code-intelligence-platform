@@ -124,30 +124,32 @@ This allows future predictive analytics and risk forecasting.
 
 ```text
 final-folder/
-├── backend/
-│   ├── app/
-│   │   ├── api/
-│   │   │   └── routes/
-│   │   ├── services/
-│   │   │   ├── pipeline/
-│   │   │   ├── runners/
-│   │   │   └── history/
-│   │   └── main.py
-│   └── storage/                  # runtime scan outputs (ignored in git)
-├── frontend/
-│   ├── public/
-│   └── src/
-│       ├── api/
-│       ├── components/
-│       ├── hooks/
-│       ├── pages/
-│       ├── types/
-│       ├── App.tsx
-│       └── main.tsx
-└── docs/
-    ├── architecture.png
-    └── dashboard.png
+├─ backend/
+│  ├─ app/
+│  │  ├─ api/
+│  │  │  └─ routes/
+│  │  ├─ services/
+│  │  └─ main.py
+│  └─ storage/
+├─ frontend/
+│  ├─ src/
+│  │  ├─ api/
+│  │  ├─ components/
+│  │  ├─ hooks/
+│  │  ├─ pages/
+│  │  ├─ types/
+│  │  ├─ App.tsx
+│  │  └─ main.tsx
+│  └─ public/
+└─ docs/
+   ├─ architecture.png
+   └─ dashboard.png
+
 ---
+```md
+## 🖥 Dashboard Preview
+
+![Dashboard Preview](docs/dashboard.png)
 
 ## ⚙️ How to Run
 
@@ -229,6 +231,3 @@ Educational Use – Final Year Project
 
 Manoj
 AI-Powered Code Intelligence & Review Platform
-## 🖥 Dashboard Preview
-
-![Dashboard Preview](docs/dashboard.png)
