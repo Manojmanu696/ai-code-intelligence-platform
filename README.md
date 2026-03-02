@@ -3,12 +3,6 @@
 ![React](https://img.shields.io/badge/React-Frontend-blue)
 ![License](https://img.shields.io/badge/License-Educational-orange)
 
-
-
-![Python](https://img.shields.io/badge/Python-3.x-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-Backend-green)
-![React](https://img.shields.io/badge/React-Frontend-blue)
-![License](https://img.shields.io/badge/License-Educational-orange)
 # AI-Powered Code Intelligence & Review Platform
 
 A hybrid static analysis and AI-enhanced code intelligence platform designed to evaluate software quality, security risk, and maintainability using unified issue normalization, advanced metrics, and density-based scoring.
