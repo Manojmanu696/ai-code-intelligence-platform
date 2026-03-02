@@ -229,3 +229,6 @@ Educational Use – Final Year Project
 
 Manoj
 AI-Powered Code Intelligence & Review Platform
+## 🖥 Dashboard Preview
+
+![Dashboard Preview](docs/dashboard.png)
