@@ -22,4 +22,9 @@ frontend/.vite/
 # IDE
 .idea/
 .vscode/
-EOF
+EOFfrontend_backup/
+frontend_backup/
+backend/storage/
+.venv/
+frontend/node_modules/
+frontend/dist/
