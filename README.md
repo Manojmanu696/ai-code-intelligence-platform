@@ -28,6 +28,10 @@ It is designed to go beyond basic linting by:
 
 
 ---
+## 🖥 Dashboard Preview
+
+![Dashboard Preview](docs/dashboard.png)
+---
 
 ## 🧠 Key Features
 
@@ -146,10 +150,7 @@ final-folder/
    └─ dashboard.png
 
 ---
-```md
-## 🖥 Dashboard Preview
 
-![Dashboard Preview](docs/dashboard.png)
 
 ## ⚙️ How to Run
 
