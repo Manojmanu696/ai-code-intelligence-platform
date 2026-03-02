@@ -24,22 +24,7 @@ It is designed to go beyond basic linting by:
 
 ## 🏗 Architecture
 
-
-User
-↓
-Frontend (React + Vite + Tailwind)
-↓
-FastAPI Backend
-↓
-Static Analysis Tools (Flake8 + Bandit)
-↓
-Normalizer → Unified Issues
-↓
-Metrics Engine
-↓
-Scoring Engine
-↓
-Trend History Storage
+![Architecture Diagram](docs/architecture.png)
 
 
 ---
