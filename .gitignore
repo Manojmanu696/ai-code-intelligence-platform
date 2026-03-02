@@ -1,37 +1,25 @@
-# --- Python / venv ---
+# Python
 .venv/
 venv/
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-*.egg-info/
-.dist/
-build/
-dist/
-
-# --- Tool / test caches ---
 .pytest_cache/
 .mypy_cache/
-.coverage
-htmlcov/
 coverage/
-.ruff_cache/
-
-# --- Your generated scan artifacts ---
-backend/storage/
-
-# --- OS / Editor ---
-.DS_Store
-.vscode/
-.idea/
-
-# --- Node (future dashboard etc.) ---
-node_modules/
-.next/
-
-# --- Logs ---
 *.log
 
-# --- Root generated storage ---
-storage/
+# Backend storage (generated scans/results)
+backend/storage/
+
+# Node / Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+EOF

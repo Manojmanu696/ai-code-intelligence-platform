@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Make the app full height */
+html, body, #root {
+  height: 100%;
+}
+
+/* Calm sky base */
+body {
+  margin: 0;
+  overflow-x: hidden;
+  background: radial-gradient(circle at 50% -10%, rgba(180, 235, 255, 0.85), rgba(245, 252, 255, 1) 55%);
+  color: #0b172a;
+}
+
+/* Waves: always behind everything */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: url("/waves.svg") no-repeat center bottom;
+  background-size: cover;
+  opacity: 1;
+  pointer-events: none;
+  z-index: -2;
+}
+
+/* Soft vignette so top doesn’t look “white noisy” */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(ellipse at top, rgba(255,255,255,0.75), rgba(255,255,255,0) 55%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Glass card base */
+.glass {
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: 0 18px 50px rgba(0, 35, 60, 0.18);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-radius: 22px;
+}
+
+/* Slight stronger glass for large sections */
+.glass-strong {
+  background: rgba(255, 255, 255, 0.20);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+}
+
+/* Buttons */
+.btn {
+  border-radius: 999px;
+  padding: 10px 14px;
+  font-weight: 700;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, opacity 0.12s ease;
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn-primary {
+  background: #0b172a;
+  color: white;
+  box-shadow: 0 14px 26px rgba(10, 20, 35, 0.22);
+}
+.btn-ghost {
+  background: rgba(255,255,255,0.35);
+  border: 1px solid rgba(255,255,255,0.35);
+  color: #0b172a;
+}
+.tab {
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-weight: 700;
+  border: 1px solid rgba(255,255,255,0.35);
+  background: rgba(255,255,255,0.28);
+  color: #0b172a;
+}
+.tab-active {
+  background: #0b172a;
+  color: #fff;
+  border-color: rgba(11,23,42,0.35);
+}

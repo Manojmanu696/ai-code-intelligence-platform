@@ -1,0 +1,26 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="900" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F0F9FF"/>
+      <stop offset="0.4" stop-color="#EEF2FF"/>
+      <stop offset="1" stop-color="#FDF2F8"/>
+    </linearGradient>
+
+    <linearGradient id="wave1" x1="0" y1="0" x2="1600" y2="900">
+      <stop stop-color="#6366F1"/>
+      <stop offset="0.5" stop-color="#06B6D4"/>
+      <stop offset="1" stop-color="#EC4899"/>
+    </linearGradient>
+
+    <filter id="blur">
+      <feGaussianBlur stdDeviation="40"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+
+  <g filter="url(#blur)" opacity="0.65">
+    <path d="M-100 600C200 500 400 750 700 650C1000 550 1100 400 1400 450C1700 500 1800 700 1800 700V900H-100V600Z" fill="url(#wave1)"/>
+    <path d="M-100 700C200 600 450 850 750 750C1050 650 1150 550 1450 600C1750 650 1850 800 1850 800V900H-100V700Z" fill="url(#wave1)" opacity="0.6"/>
+  </g>
+</svg>
