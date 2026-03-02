@@ -239,3 +239,6 @@ Educational Use – Final Year Project
 
 Manoj
 AI-Powered Code Intelligence & Review Platform
+
+## 📸 Dashboard Preview
+<img width="1728" height="1117" alt="Screenshot 2026-03-02 at 9 29 47 PM" src="https://github.com/user-attachments/assets/ae0fb4e4-9a25-42ad-8e39-f641744e75d1" />
