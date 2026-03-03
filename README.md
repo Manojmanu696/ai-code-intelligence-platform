@@ -231,5 +231,5 @@ Educational Use – Final Year Project
 
 👨‍💻 Author
 
-Manoj
+Manoj, Amul, Bhuvan, Praful 
 AI-Powered Code Intelligence & Review Platform
