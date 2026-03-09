@@ -1,20 +1,29 @@
 // frontend/src/api/client.ts
+
 export const API_BASE =
   (import.meta as any).env?.VITE_API_BASE?.toString()?.trim() ||
   "http://127.0.0.1:8000";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
     headers: {
-      "Content-Type": "application/json",
       ...(options?.headers || {}),
     },
-    ...options,
   });
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`${res.status} ${res.statusText}${text ? ` — ${text}` : ""}`);
+    throw new Error(
+      `${res.status} ${res.statusText}${text ? ` — ${text}` : ""}`
+    );
+  }
+
+  // Some endpoints may return empty body
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.includes("application/json")) {
+    // @ts-ignore
+    return (await res.text()) as T;
   }
 
   return (await res.json()) as T;
@@ -46,13 +55,19 @@ export type ScanResultsResponse = {
 export async function createScan(project_name: string) {
   return request<CreateScanResponse>(`/scans`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ project_name }),
   });
 }
 
-export async function pasteCode(scan_id: string, filename: string, content: string) {
+export async function pasteCode(
+  scan_id: string,
+  filename: string,
+  content: string
+) {
   return request<{ status: string }>(`/scans/${scan_id}/paste`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ filename, content }),
   });
 }
@@ -60,6 +75,7 @@ export async function pasteCode(scan_id: string, filename: string, content: stri
 export async function startScan(scan_id: string) {
   return request<{ status: string }>(`/scans/${scan_id}/start`, {
     method: "POST",
+    headers: { "Content-Type": "application/json" },
   });
 }
 
@@ -86,7 +102,9 @@ export async function uploadZip(scan_id: string, file: File) {
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`${res.status} ${res.statusText}${text ? ` — ${text}` : ""}`);
+    throw new Error(
+      `${res.status} ${res.statusText}${text ? ` — ${text}` : ""}`
+    );
   }
 
   return (await res.json()) as { status: string };

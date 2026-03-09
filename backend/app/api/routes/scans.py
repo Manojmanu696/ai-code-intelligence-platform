@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, UploadFile, File, Query
 from pydantic import BaseModel
 
 from app.services.pipeline.simple_pipeline import run_tools_for_scan
@@ -38,6 +38,7 @@ EXCLUDE_DIRS = {
     ".pytest_cache",
     ".next",
     "target",
+    "__MACOSX",  # ✅ Mac zip junk
 }
 ALLOWED_EXTENSIONS = {".py"}  # MVP locked: Python-only
 MAX_FILE_SIZE_BYTES = 1_048_576  # 1MB
@@ -73,12 +74,10 @@ def _write_json(p: Path, data: Any) -> None:
 def _to_rel_path(path_str: str, scan_path: Path) -> str:
     """
     Convert an absolute path inside this scan to a clean relative path.
-    Example:
-      /Users/.../storage/scans/<id>/input/test.py  -> input/test.py
+    Example: /Users/.../storage/scans/<id>/input/test.py -> input/test.py
     """
     if not path_str:
         return path_str
-
     try:
         p = Path(path_str)
         rel = p.relative_to(scan_path)
@@ -94,6 +93,17 @@ def _to_rel_path(path_str: str, scan_path: Path) -> str:
     return s
 
 
+def _slugify(s: str) -> str:
+    """
+    Stable project key generator.
+    'My Project' -> 'my-project'
+    """
+    s = (s or "").strip().lower()
+    s = re.sub(r"[^a-z0-9]+", "-", s)
+    s = re.sub(r"-{2,}", "-", s).strip("-")
+    return s or "project"
+
+
 # -----------------------------
 # Ingestion helpers
 # -----------------------------
@@ -104,16 +114,13 @@ def _should_skip_dir(name: str) -> bool:
 def _is_allowed_file(p: Path) -> bool:
     if not p.is_file():
         return False
-
     if p.suffix.lower() not in ALLOWED_EXTENSIONS:
         return False
-
     try:
         if p.stat().st_size > MAX_FILE_SIZE_BYTES:
             return False
     except OSError:
         return False
-
     return True
 
 
@@ -125,16 +132,46 @@ def _ingest_extracted_tree(extract_dir: Path, input_dir: Path) -> Dict[str, Any]
     """
     Walk extracted tree, apply exclude rules + allowed extensions + max size,
     copy into input/ while preserving relative paths.
+
+    ✅ FIX:
+    If the zip extracts into a single top-level folder (common GitHub zips),
+    strip that folder so paths become clean:
+      backend/... instead of repo-main/backend/...
     """
+
+    def _effective_root(root: Path) -> Path:
+        try:
+            children = list(root.iterdir())
+        except Exception:
+            return root
+
+        visible = []
+        for c in children:
+            name = c.name
+            if _should_skip_dir(name):
+                continue
+            if name == "__MACOSX":
+                continue
+            visible.append(c)
+
+        dirs = [p for p in visible if p.is_dir()]
+        files = [p for p in visible if p.is_file()]
+
+        # If zip contains exactly ONE folder and no files at root -> strip it
+        if len(files) == 0 and len(dirs) == 1:
+            return dirs[0]
+        return root
+
     kept = 0
     skipped = 0
     skipped_samples: list[dict[str, str]] = []
 
-    for p in extract_dir.rglob("*"):
+    base = _effective_root(extract_dir)
+
+    for p in base.rglob("*"):
         # Skip excluded directories if any path segment matches
         if any(_should_skip_dir(part) for part in p.parts):
             continue
-
         if p.is_dir():
             continue
 
@@ -147,10 +184,14 @@ def _ingest_extracted_tree(extract_dir: Path, input_dir: Path) -> Dict[str, Any]
                         reason = "too_large"
                 except OSError:
                     reason = "stat_failed"
-                skipped_samples.append({"file": str(p.relative_to(extract_dir)), "reason": reason})
+                try:
+                    rel_name = str(p.relative_to(base))
+                except Exception:
+                    rel_name = str(p)
+                skipped_samples.append({"file": rel_name, "reason": reason})
             continue
 
-        rel = p.relative_to(extract_dir)
+        rel = p.relative_to(base)
         dest = input_dir / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(p, dest)
@@ -163,6 +204,8 @@ def _ingest_extracted_tree(extract_dir: Path, input_dir: Path) -> Dict[str, Any]
         "allowed_extensions": sorted(ALLOWED_EXTENSIONS),
         "excluded_dirs": sorted(EXCLUDE_DIRS),
         "skipped_samples": skipped_samples,
+        "stripped_single_root": bool(base != extract_dir),
+        "root_used": base.name,
     }
 
 
@@ -210,15 +253,11 @@ def _download_github_zip(owner: str, repo: str, ref: str, out_path: Path) -> Non
 # -----------------------------
 @router.post("/scans")
 def create_scan() -> Dict[str, Any]:
-    """
-    Creates an isolated scan workspace.
-    """
+    """Creates an isolated scan workspace."""
     scan_id = str(uuid4())
     scan_path = BASE_STORAGE / scan_id
-
     for folder in ["input", "raw", "normalized", "metrics", "score", "ai"]:
         (scan_path / folder).mkdir(parents=True, exist_ok=True)
-
     return {"scan_id": scan_id, "status": "CREATED"}
 
 
@@ -227,7 +266,6 @@ def scan_status(scan_id: str) -> Dict[str, Any]:
     scan_path = BASE_STORAGE / scan_id
     if not scan_path.exists():
         raise HTTPException(status_code=404, detail="Scan not found")
-
     raw_dir = scan_path / "raw"
     done = (raw_dir / "runner_done.json").exists()
     return {"scan_id": scan_id, "status": "DONE" if done else "READY"}
@@ -235,9 +273,7 @@ def scan_status(scan_id: str) -> Dict[str, Any]:
 
 @router.post("/scans/{scan_id}/paste")
 def paste_code(scan_id: str, payload: PastePayload) -> Dict[str, Any]:
-    """
-    Save a single file into input/ for scanning.
-    """
+    """Save a single file into input/ for scanning."""
     scan_path = BASE_STORAGE / scan_id
     if not scan_path.exists():
         raise HTTPException(status_code=404, detail="Scan not found")
@@ -252,7 +288,6 @@ def paste_code(scan_id: str, payload: PastePayload) -> Dict[str, Any]:
 
     input_dir = scan_path / "input"
     input_dir.mkdir(parents=True, exist_ok=True)
-
     file_path = input_dir / fname
     file_path.parent.mkdir(parents=True, exist_ok=True)
     file_path.write_text(payload.content, encoding="utf-8")
@@ -293,16 +328,16 @@ def upload_zip(scan_id: str, file: UploadFile = File(...)) -> Dict[str, Any]:
             raise HTTPException(status_code=400, detail="Invalid zip file")
 
         ingestion_summary = _ingest_extracted_tree(extract_dir, input_dir)
+        ingestion_summary["source"] = {"type": "zip", "filename": file.filename}
+        _write_json(raw_dir / "ingestion.json", ingestion_summary)
 
-    ingestion_summary["source"] = {"type": "zip", "filename": file.filename}
-    _write_json(raw_dir / "ingestion.json", ingestion_summary)
-
-    return {
-        "scan_id": scan_id,
-        "status": "UPLOADED",
-        "kept": ingestion_summary["kept"],
-        "skipped": ingestion_summary["skipped"],
-    }
+        return {
+            "scan_id": scan_id,
+            "status": "UPLOADED",
+            "kept": ingestion_summary["kept"],
+            "skipped": ingestion_summary["skipped"],
+            "stripped_root": ingestion_summary.get("stripped_single_root", False),
+        }
 
 
 @router.post("/scans/{scan_id}/github")
@@ -337,31 +372,38 @@ def ingest_github(scan_id: str, payload: GitHubPayload) -> Dict[str, Any]:
             raise HTTPException(status_code=400, detail="Downloaded file is not a valid zip")
 
         ingestion_summary = _ingest_extracted_tree(extract_dir, input_dir)
+        ingestion_summary["source"] = {
+            "type": "github",
+            "repo_url": payload.repo_url,
+            "owner": owner,
+            "repo": repo,
+            "ref": payload.ref,
+        }
+        _write_json(raw_dir / "ingestion.json", ingestion_summary)
 
-    ingestion_summary["source"] = {
-        "type": "github",
-        "repo_url": payload.repo_url,
-        "owner": owner,
-        "repo": repo,
-        "ref": payload.ref,
-    }
-    _write_json(raw_dir / "ingestion.json", ingestion_summary)
-
-    return {
-        "scan_id": scan_id,
-        "status": "GITHUB_INGESTED",
-        "kept": ingestion_summary["kept"],
-        "skipped": ingestion_summary["skipped"],
-        "repo": f"{owner}/{repo}",
-        "ref": payload.ref,
-    }
+        return {
+            "scan_id": scan_id,
+            "status": "GITHUB_INGESTED",
+            "kept": ingestion_summary["kept"],
+            "skipped": ingestion_summary["skipped"],
+            "repo": f"{owner}/{repo}",
+            "ref": payload.ref,
+            "stripped_root": ingestion_summary.get("stripped_single_root", False),
+        }
 
 
 @router.post("/scans/{scan_id}/start")
-def start_scan(scan_id: str) -> Dict[str, Any]:
+def start_scan(
+    scan_id: str,
+    project_name: Optional[str] = Query(default=None),
+    project_key: Optional[str] = Query(default=None),
+) -> Dict[str, Any]:
     """
     Starts the scan pipeline synchronously (MVP scope).
-    Uses your existing pipeline: run_tools_for_scan(scan_path)
+
+    ✅ Trend stability fix:
+    - Persist project_name/project_key into raw/ingestion.json BEFORE running pipeline.
+    - If only project_name is given, project_key is auto-generated (slug).
     """
     scan_path = BASE_STORAGE / scan_id
     if not scan_path.exists():
@@ -378,6 +420,20 @@ def start_scan(scan_id: str) -> Dict[str, Any]:
         )
         return {"scan_id": scan_id, "status": "FAILED", "reason": "NO_PY_FILES"}
 
+    # ✅ Ensure ingestion.json exists and contains stable project identifiers
+    ingestion_path = raw_dir / "ingestion.json"
+    ingestion = _read_json(ingestion_path) or {"source": {"type": "unknown"}}
+
+    if project_name:
+        ingestion["project_name"] = project_name
+
+    if project_key:
+        ingestion["project_key"] = project_key
+    elif project_name and not ingestion.get("project_key"):
+        ingestion["project_key"] = _slugify(project_name)
+
+    _write_json(ingestion_path, ingestion)
+
     result = run_tools_for_scan(scan_path)
     return {"scan_id": scan_id, "status": "DONE", "result": result}
 
@@ -385,7 +441,7 @@ def start_scan(scan_id: str) -> Dict[str, Any]:
 @router.get("/scans/{scan_id}/results")
 def get_scan_results(scan_id: str) -> Dict[str, Any]:
     """
-    Returns raw + normalized + metrics + score for frontend.
+    Returns raw + normalized + unified_issues + metrics + score for frontend.
     Also fixes absolute paths into relative ones like input/test.py.
     """
     scan_path = BASE_STORAGE / scan_id
@@ -398,8 +454,10 @@ def get_scan_results(scan_id: str) -> Dict[str, Any]:
     score_dir = scan_path / "score"
     ai_dir = scan_path / "ai"
 
+    ingestion_obj = _read_json(raw_dir / "ingestion.json") or {}
+
     raw: Dict[str, Any] = {
-        "ingestion": _read_json(raw_dir / "ingestion.json"),
+        "ingestion": ingestion_obj,
         "flake8": _read_json(raw_dir / "flake8.json") or {},
         "bandit": _read_json(raw_dir / "bandit.json") or {},
         "runner_done": _read_json(raw_dir / "runner_done.json") or {},
@@ -413,13 +471,17 @@ def get_scan_results(scan_id: str) -> Dict[str, Any]:
         "bandit": _read_json(norm_dir / "bandit.normalized.json") or {},
     }
 
+    # ✅ unified issues for Issues page
+    unified_issues = _read_json(norm_dir / "unified_issues.json") or []
+    if not isinstance(unified_issues, list):
+        unified_issues = []
+
     metrics = _read_json(metrics_dir / "metrics.json")
     score = _read_json(score_dir / "score.json")
 
     # -----------------------------
     # Fix paths -> relative
     # -----------------------------
-    # raw.flake8 dict keys + issue filename
     if isinstance(raw.get("flake8"), dict):
         new_flake8 = {}
         for fname, items in raw["flake8"].items():
@@ -431,7 +493,6 @@ def get_scan_results(scan_id: str) -> Dict[str, Any]:
             new_flake8[rel_name] = items
         raw["flake8"] = new_flake8
 
-    # raw.bandit: results[].filename
     bandit_raw = raw.get("bandit")
     if isinstance(bandit_raw, dict):
         results_list = bandit_raw.get("results")
@@ -440,10 +501,8 @@ def get_scan_results(scan_id: str) -> Dict[str, Any]:
                 if isinstance(it, dict) and "filename" in it:
                     it["filename"] = _to_rel_path(it["filename"], scan_path)
 
-        # bandit_raw["metrics"] contains a lot; filenames may appear as keys in metrics dicts
         metrics_obj = bandit_raw.get("metrics")
         if isinstance(metrics_obj, dict):
-            # Only rewrite top-level keys that are paths (safe)
             new_metrics = {}
             for k, v in metrics_obj.items():
                 if isinstance(k, str) and (k.startswith("/") or "/input/" in k):
@@ -452,25 +511,34 @@ def get_scan_results(scan_id: str) -> Dict[str, Any]:
                     new_metrics[k] = v
             bandit_raw["metrics"] = new_metrics
 
-    # normalized.flake8 issues[].file
     fl_norm = normalized.get("flake8")
     if isinstance(fl_norm, dict) and isinstance(fl_norm.get("issues"), list):
         for it in fl_norm["issues"]:
             if isinstance(it, dict) and "file" in it:
                 it["file"] = _to_rel_path(it["file"], scan_path)
 
-    # normalized.bandit issues[].file
     bd_norm = normalized.get("bandit")
     if isinstance(bd_norm, dict) and isinstance(bd_norm.get("issues"), list):
         for it in bd_norm["issues"]:
             if isinstance(it, dict) and "file" in it:
                 it["file"] = _to_rel_path(it["file"], scan_path)
 
+    for it in unified_issues:
+        if isinstance(it, dict) and it.get("file"):
+            it["file"] = _to_rel_path(str(it["file"]), scan_path)
+
+    # ✅ expose stable key to frontend (so it can always call /projects/{key}/trend)
+    project_key = ingestion_obj.get("project_key")
+    project_name = ingestion_obj.get("project_name")
+
     return {
         "scan_id": scan_id,
         "status": "OK",
+        "project_key": project_key,
+        "project_name": project_name,
         "raw": raw,
         "normalized": normalized,
+        "unified_issues": unified_issues,
         "metrics": metrics,
         "score": score,
         "ai": {"exists": ai_dir.exists()},

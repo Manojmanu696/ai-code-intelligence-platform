@@ -16,13 +16,10 @@ from app.services.processors.normalize import (
 from app.services.processors.metrics import build_metrics
 from app.services.scoring.scoring import compute_score
 
-# ✅ NEW: trend writer
 from app.services.history.trend import append_trend_point
+from app.services.ai.generator import generate_ai_outputs
 
 
-# -----------------------------
-# JSON helpers
-# -----------------------------
 def _read_json(p: Path) -> Optional[Any]:
     if not p.exists():
         return None
@@ -37,7 +34,6 @@ def _write_json(p: Path, data: Any) -> None:
 def _to_scan_rel_path(path_str: str, scan_path: Path) -> str:
     if not path_str:
         return path_str
-
     try:
         return Path(path_str).relative_to(scan_path).as_posix()
     except Exception:
@@ -48,10 +44,6 @@ def _to_scan_rel_path(path_str: str, scan_path: Path) -> str:
         return s
 
 
-# -----------------------------
-# Post-processing step
-# raw -> normalized -> unified -> metrics -> score -> trend
-# -----------------------------
 def postprocess_scan(scan_path: Path) -> Dict[str, Any]:
     raw_dir = scan_path / "raw"
     norm_dir = scan_path / "normalized"
@@ -59,7 +51,7 @@ def postprocess_scan(scan_path: Path) -> Dict[str, Any]:
     score_dir = scan_path / "score"
 
     # Read raw outputs
-    flake8_raw = _read_json(raw_dir / "flake8.json") or []
+    flake8_raw = _read_json(raw_dir / "flake8.json") or {}
     bandit_raw = _read_json(raw_dir / "bandit.json") or {}
 
     # Normalize per-tool
@@ -88,7 +80,16 @@ def postprocess_scan(scan_path: Path) -> Dict[str, Any]:
     score = compute_score(metrics)
     _write_json(score_dir / "score.json", score)
 
-    # ✅ NEW: Trend append (auto project_key via raw/ingestion.json)
+    # ✅ AI Summary (rule-based now, LLM later)
+    # This writes: scan_path/ai/ai_summary.json
+    generate_ai_outputs(
+        scan_path=scan_path,
+        unified_issues=unified,
+        metrics=metrics,
+        score=score,
+    )
+
+    # ✅ Trend append
     ingestion = _read_json(raw_dir / "ingestion.json")
     storage_root = scan_path.parent.parent  # .../backend/storage
     trend_file = append_trend_point(
@@ -107,14 +108,12 @@ def postprocess_scan(scan_path: Path) -> Dict[str, Any]:
         ],
         "metrics_file": str(metrics_dir / "metrics.json"),
         "score_file": str(score_dir / "score.json"),
+        "ai_file": str(scan_path / "ai" / "ai_summary.json"),
         "trend_file": str(trend_file),
         "final_score": score.get("final_score"),
     }
 
 
-# -----------------------------
-# Main synchronous pipeline
-# -----------------------------
 def run_tools_for_scan(scan_path: Path) -> Dict[str, Any]:
     input_dir = scan_path / "input"
     raw_dir = scan_path / "raw"
@@ -130,17 +129,8 @@ def run_tools_for_scan(scan_path: Path) -> Dict[str, Any]:
         return {"status": "FAILED", "reason": "NO_INPUT_DIR"}
 
     # Run tools -> raw/
-    run_flake8(
-        input_dir=input_dir,
-        out_json=raw_dir / "flake8.json",
-        warnings_json=warnings_file,
-    )
-
-    run_bandit(
-        input_dir=input_dir,
-        out_json=raw_dir / "bandit.json",
-        warnings_json=warnings_file,
-    )
+    run_flake8(input_dir=input_dir, out_json=raw_dir / "flake8.json", warnings_json=warnings_file)
+    run_bandit(input_dir=input_dir, out_json=raw_dir / "bandit.json", warnings_json=warnings_file)
 
     write_json(raw_dir / "runner_done.json", {"status": "DONE"})
 
