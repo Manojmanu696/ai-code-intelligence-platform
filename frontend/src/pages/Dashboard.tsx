@@ -23,6 +23,45 @@ type ScanStatusResponse = {
   status: string;
 };
 
+type AIEnrichedIssue = {
+  tool?: string;
+  rule_id?: string;
+  severity?: string;
+  confidence?: number | string | null;
+  file?: string;
+  line?: number | null;
+  message?: string;
+  category?: string;
+  explanation?: string;
+  fix?: string;
+  risk?: string;
+  impact?: string;
+  priority_score?: number;
+  priority?: string;
+};
+
+type AISummary = {
+  generated_at?: string;
+  scan_id?: string;
+  final_score?: number | null;
+  penalty?: number | null;
+  summary?: {
+    issues_total?: number;
+    loc?: number;
+    by_severity?: Record<string, number>;
+    bandit_findings?: number;
+    risk_level?: string | null;
+    headline?: string;
+    security_overview?: string;
+    quality_overview?: string;
+    priority_action?: string;
+  };
+  top_risky_issues?: AIEnrichedIssue[];
+  issues_enriched?: AIEnrichedIssue[];
+  recommendations?: string[];
+  note?: string;
+};
+
 type ScanResultsResponse = {
   scan_id: string;
   status: string;
@@ -31,25 +70,28 @@ type ScanResultsResponse = {
   metrics?: any;
   score?: any;
   unified_issues?: any;
-  ai?: any;
+  ai?: {
+    exists?: boolean;
+    summary?: AISummary | null;
+  };
   project_key?: string;
   project_name?: string;
 };
 
 type HistoryItem = {
-  id: string; // scan_id
+  id: string;
   projectName: string;
   mode: Mode;
   filename?: string;
   createdAt: number;
-  score?: number; // 0-100
+  score?: number;
   risk?: "Low Risk" | "Medium Risk" | "High Risk";
   issues?: number;
   loc?: number;
 };
 
 type TrendPoint = {
-  ts: number; // unix ms
+  ts: number;
   score: number;
   issues: number;
   loc: number;
@@ -74,7 +116,9 @@ function fmtAgo(ts: number) {
   return `${d}d ago`;
 }
 
-function riskFromScore(score?: number): "Low Risk" | "Medium Risk" | "High Risk" {
+function riskFromScore(
+  score?: number
+): "Low Risk" | "Medium Risk" | "High Risk" {
   const s = typeof score === "number" ? score : 0;
   if (s >= 80) return "Low Risk";
   if (s >= 50) return "Medium Risk";
@@ -82,12 +126,37 @@ function riskFromScore(score?: number): "Low Risk" | "Medium Risk" | "High Risk"
 }
 
 function badgeClasses(risk: "Low Risk" | "Medium Risk" | "High Risk") {
-  if (risk === "Low Risk") return "bg-emerald-100 text-emerald-800 border-emerald-200";
-  if (risk === "Medium Risk") return "bg-amber-100 text-amber-800 border-amber-200";
+  if (risk === "Low Risk") {
+    return "bg-emerald-100 text-emerald-800 border-emerald-200";
+  }
+  if (risk === "Medium Risk") {
+    return "bg-amber-100 text-amber-800 border-amber-200";
+  }
   return "bg-rose-100 text-rose-800 border-rose-200";
 }
 
-// UI-only path cleanup
+function severityBadgeClasses(severity?: string) {
+  const s = String(severity || "").toLowerCase();
+  if (s === "high") {
+    return "bg-rose-100 text-rose-800 border-rose-200";
+  }
+  if (s === "medium") {
+    return "bg-amber-100 text-amber-800 border-amber-200";
+  }
+  return "bg-emerald-100 text-emerald-800 border-emerald-200";
+}
+
+function toolBadgeClasses(tool?: string) {
+  const t = String(tool || "").toLowerCase();
+  if (t === "bandit") {
+    return "bg-violet-100 text-violet-800 border-violet-200";
+  }
+  if (t === "flake8") {
+    return "bg-sky-100 text-sky-800 border-sky-200";
+  }
+  return "bg-slate-100 text-slate-700 border-slate-200";
+}
+
 function cleanFilePath(p?: string) {
   if (!p) return "";
   let s = String(p).replace(/\\/g, "/");
@@ -107,12 +176,24 @@ function cleanFilePath(p?: string) {
   return s;
 }
 
-function normalizeRecurring(input: any): Array<{ key: string; count: number }> {
+function cleanText(value?: string) {
+  if (!value) return "";
+  return String(value).replace(/input\//g, "");
+}
+
+function normalizeRecurring(
+  input: any
+): Array<{ key: string; count: number }> {
   if (!input) return [];
-  const raw = Array.isArray(input) ? input : Array.isArray(input.items) ? input.items : [];
+  const raw = Array.isArray(input)
+    ? input
+    : Array.isArray(input.items)
+    ? input.items
+    : [];
   if (!Array.isArray(raw)) return [];
 
   const out: Array<{ key: string; count: number }> = [];
+
   for (const item of raw) {
     if (Array.isArray(item) && item.length >= 2) {
       const k = String(item[0] ?? "");
@@ -120,22 +201,27 @@ function normalizeRecurring(input: any): Array<{ key: string; count: number }> {
       if (k) out.push({ key: k, count: Number.isFinite(c) ? c : 0 });
       continue;
     }
+
     if (item && typeof item === "object") {
       const k =
         String(
-          (item as any).key ??
-            (item as any).rule ??
-            (item as any).rule_id ??
-            (item as any).ruleId ??
-            (item as any).id ??
+          item.key ??
+            item.rule ??
+            item.rule_id ??
+            item.ruleId ??
+            item.id ??
             ""
         ) || "";
-      const c = Number((item as any).count ?? (item as any).value ?? (item as any).occurrences ?? 0);
+      const c = Number(item.count ?? item.value ?? item.occurrences ?? 0);
       if (k) out.push({ key: k, count: Number.isFinite(c) ? c : 0 });
       continue;
     }
-    if (typeof item === "string") out.push({ key: item, count: 1 });
+
+    if (typeof item === "string") {
+      out.push({ key: item, count: 1 });
+    }
   }
+
   return out;
 }
 
@@ -173,7 +259,6 @@ function uniq<T>(arr: T[]) {
   return Array.from(new Set(arr));
 }
 
-// parse JSON array OR {points:[...]} OR JSONL
 async function parseTrendResponse(res: Response): Promise<any[]> {
   const ct = (res.headers.get("content-type") || "").toLowerCase();
 
@@ -196,7 +281,11 @@ async function parseTrendResponse(res: Response): Promise<any[]> {
     return Array.isArray(data) ? data : [];
   }
 
-  const lines = trimmed.split("\n").map((l) => l.trim()).filter(Boolean);
+  const lines = trimmed
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+
   const out: any[] = [];
   for (const line of lines) {
     try {
@@ -215,40 +304,33 @@ export default function Dashboard() {
   const [mode, setMode] = useState<Mode>("paste");
   const [projectName, setProjectName] = useState("My Project");
 
-  // paste mode
   const [filename, setFilename] = useState("main.py");
   const [code, setCode] = useState("");
 
-  // upload mode
   const [zipFile, setZipFile] = useState<File | null>(null);
 
-  // repo mode
   const [repoUrl, setRepoUrl] = useState("");
   const [githubToken, setGithubToken] = useState("");
 
-  // scan state
   const [scanId, setScanId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>("IDLE");
   const [isRunning, setIsRunning] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // results
   const [results, setResults] = useState<ScanResultsResponse | null>(null);
   const [showRaw, setShowRaw] = useState(false);
 
-  // history
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(
+    null
+  );
 
-  // ✅ selected history item / selected scan
-  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
-
-  // trend
   const [trend, setTrend] = useState<TrendPoint[]>([]);
   const [trendLoading, setTrendLoading] = useState(false);
   const [trendError, setTrendError] = useState<string | null>(null);
+  const [copiedIssueKey, setCopiedIssueKey] = useState<string | null>(null);
 
-  // Load history
   useEffect(() => {
     try {
       const raw = localStorage.getItem(LS_KEY);
@@ -262,7 +344,6 @@ export default function Dashboard() {
     }
   }, []);
 
-  // Persist history
   useEffect(() => {
     if (!historyLoaded) return;
     try {
@@ -272,7 +353,6 @@ export default function Dashboard() {
     }
   }, [history, historyLoaded]);
 
-  // ✅ default selected item = latest history once loaded
   useEffect(() => {
     if (!historyLoaded) return;
     if (!selectedHistoryId && history.length > 0) {
@@ -280,9 +360,14 @@ export default function Dashboard() {
     }
   }, [historyLoaded, history, selectedHistoryId]);
 
+  useEffect(() => {
+    if (!copiedIssueKey) return;
+    const timer = window.setTimeout(() => setCopiedIssueKey(null), 1600);
+    return () => window.clearTimeout(timer);
+  }, [copiedIssueKey]);
+
   const latest = useMemo(() => history[0] ?? null, [history]);
 
-  // ✅ active selected history item
   const selectedHistoryItem = useMemo(() => {
     if (!selectedHistoryId) return null;
     return history.find((h) => h.id === selectedHistoryId) ?? null;
@@ -295,9 +380,15 @@ export default function Dashboard() {
         results?.score?.score ??
         results?.score?.value
     );
-    const finalScore = Number.isFinite(scoreNum) ? clamp(scoreNum, 0, 100) : 0;
+    const finalScore = Number.isFinite(scoreNum)
+      ? clamp(scoreNum, 0, 100)
+      : 0;
 
-    const penaltyNum = Number(results?.score?.penalty ?? results?.score?.total_penalty ?? results?.score?.totalPenalty);
+    const penaltyNum = Number(
+      results?.score?.penalty ??
+        results?.score?.total_penalty ??
+        results?.score?.totalPenalty
+    );
     const penalty = Number.isFinite(penaltyNum) ? penaltyNum : 0;
 
     const issues =
@@ -316,23 +407,74 @@ export default function Dashboard() {
           results?.metrics?.linesOfCode
       ) || 0;
 
-    const risk = riskFromScore(finalScore);
+    const aiSummary = results?.ai?.summary ?? null;
+    const aiRiskLevel =
+      String(
+        aiSummary?.summary?.risk_level ??
+          results?.score?.risk_level ??
+          results?.score?.risk ??
+          ""
+      ).trim() || null;
 
-    const recurringRaw = results?.metrics?.most_recurring_issues ?? results?.metrics?.mostRecurringIssues ?? [];
+    const risk =
+      aiRiskLevel === "Low Risk" ||
+      aiRiskLevel === "Medium Risk" ||
+      aiRiskLevel === "High Risk"
+        ? aiRiskLevel
+        : riskFromScore(finalScore);
+
+    const recurringRaw =
+      results?.metrics?.most_recurring_issues ??
+      results?.metrics?.mostRecurringIssues ??
+      [];
     const recurring = normalizeRecurring(recurringRaw);
 
-    const topFilesRaw = results?.metrics?.top_files ?? results?.metrics?.topFiles ?? [];
-    const topFiles: Array<{ file: string; count?: number; issues?: number }> = Array.isArray(topFilesRaw)
-      ? topFilesRaw
-      : [];
+    const topFilesRaw =
+      results?.metrics?.top_files ?? results?.metrics?.topFiles ?? [];
+    const topFiles: Array<{ file: string; count?: number; issues?: number }> =
+      Array.isArray(topFilesRaw) ? topFilesRaw : [];
 
-    const heatmapRaw = results?.metrics?.heatmap ?? results?.metrics?.file_heatmap ?? results?.metrics?.fileHeatmap ?? null;
-    const heatmap: Record<string, { low?: number; medium?: number; high?: number }> =
-      heatmapRaw && typeof heatmapRaw === "object" ? heatmapRaw : {};
+    const heatmapRaw =
+      results?.metrics?.heatmap ??
+      results?.metrics?.file_heatmap ??
+      results?.metrics?.fileHeatmap ??
+      null;
+    const heatmap: Record<
+      string,
+      { low?: number; medium?: number; high?: number }
+    > = heatmapRaw && typeof heatmapRaw === "object" ? heatmapRaw : {};
 
     const rootUsed = String(results?.raw?.ingestion?.root_used ?? "").trim();
-    const backendProjectKey = String(results?.project_key ?? results?.raw?.ingestion?.project_key ?? "").trim();
-    const backendProjectName = String(results?.project_name ?? results?.raw?.ingestion?.project_name ?? "").trim();
+    const backendProjectKey = String(
+      results?.project_key ?? results?.raw?.ingestion?.project_key ?? ""
+    ).trim();
+    const backendProjectName = String(
+      results?.project_name ?? results?.raw?.ingestion?.project_name ?? ""
+    ).trim();
+
+    const aiHeadline = cleanText(aiSummary?.summary?.headline);
+    const aiSecurityOverview = cleanText(
+      aiSummary?.summary?.security_overview
+    );
+    const aiQualityOverview = cleanText(aiSummary?.summary?.quality_overview);
+    const aiPriorityAction = cleanText(aiSummary?.summary?.priority_action);
+    const aiRecommendations = Array.isArray(aiSummary?.recommendations)
+      ? aiSummary.recommendations
+          .map((x) => cleanText(x))
+          .filter(Boolean)
+          .slice(0, 6)
+      : [];
+
+    const topRiskyIssues = Array.isArray(aiSummary?.top_risky_issues)
+      ? aiSummary.top_risky_issues.slice(0, 3).map((item) => ({
+          ...item,
+          file: cleanFilePath(item.file),
+          explanation: cleanText(item.explanation),
+          fix: cleanText(item.fix),
+          risk: cleanText(item.risk),
+          impact: cleanText(item.impact),
+        }))
+      : [];
 
     return {
       finalScore,
@@ -346,6 +488,13 @@ export default function Dashboard() {
       rootUsed,
       backendProjectKey,
       backendProjectName,
+      aiHeadline,
+      aiSecurityOverview,
+      aiQualityOverview,
+      aiPriorityAction,
+      aiRecommendations,
+      aiRiskLevel,
+      topRiskyIssues,
     };
   }, [results]);
 
@@ -361,8 +510,6 @@ export default function Dashboard() {
   async function createScan(): Promise<string> {
     const resp = await api<ScanCreateResponse>(`${apiBase}/scans`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ project_name: projectName }),
     });
     return resp.scan_id;
   }
@@ -377,17 +524,21 @@ export default function Dashboard() {
 
   async function uploadZip(id: string) {
     if (!zipFile) throw new Error("Please choose a .zip file first.");
-    const fd = new FormData();
-    fd.append("file", zipFile);
+    const formData = new FormData();
+    formData.append("file", zipFile);
 
     const res = await fetch(`${apiBase}/scans/${id}/upload_zip`, {
       method: "POST",
-      body: fd,
+      body: formData,
     });
+
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`${res.status} ${res.statusText}${text ? ` — ${text}` : ""}`);
+      throw new Error(
+        `${res.status} ${res.statusText}${text ? ` — ${text}` : ""}`
+      );
     }
+
     await res.json().catch(() => ({}));
   }
 
@@ -405,23 +556,26 @@ export default function Dashboard() {
 
   async function startScan(id: string) {
     const projectKey = slugifyProjectKey(projectName || "My Project");
-    await api(`${apiBase}/scans/${id}/start?project_name=${encodeURIComponent(projectName)}&project_key=${encodeURIComponent(projectKey)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    });
+    await api(
+      `${apiBase}/scans/${id}/start?project_name=${encodeURIComponent(
+        projectName
+      )}&project_key=${encodeURIComponent(projectKey)}`,
+      {
+        method: "POST",
+      }
+    );
   }
 
   async function pollStatus(id: string) {
-    const st = await api<ScanStatusResponse>(`${apiBase}/scans/${id}/status`);
-    setStatus(st.status || "UNKNOWN");
-    return st.status || "UNKNOWN";
+    const response = await api<ScanStatusResponse>(`${apiBase}/scans/${id}/status`);
+    setStatus(response.status || "UNKNOWN");
+    return response.status || "UNKNOWN";
   }
 
   async function fetchResults(id: string) {
-    const r = await api<ScanResultsResponse>(`${apiBase}/scans/${id}/results`);
-    setResults(r);
-    return r;
+    const response = await api<ScanResultsResponse>(`${apiBase}/scans/${id}/results`);
+    setResults(response);
+    return response;
   }
 
   function upsertHistory(item: HistoryItem) {
@@ -453,22 +607,46 @@ export default function Dashboard() {
 
       const startedAt = Date.now();
       while (Date.now() - startedAt < 30000) {
-        await new Promise((r) => setTimeout(r, 700));
+        await new Promise((resolve) => setTimeout(resolve, 700));
         const s = await pollStatus(id);
         const low = s.toLowerCase();
-        if (low.includes("done") || low.includes("ok") || low.includes("error") || low.includes("failed")) break;
+        if (
+          low.includes("done") ||
+          low.includes("ok") ||
+          low.includes("error") ||
+          low.includes("failed")
+        ) {
+          break;
+        }
       }
 
-      const r = await fetchResults(id);
+      const response = await fetchResults(id);
 
-      const scoreNum = Number(r?.score?.final_score ?? r?.score?.finalScore ?? r?.score?.score ?? r?.score?.value);
-      const finalScore = Number.isFinite(scoreNum) ? clamp(scoreNum, 0, 100) : 0;
+      const scoreNum = Number(
+        response?.score?.final_score ??
+          response?.score?.finalScore ??
+          response?.score?.score ??
+          response?.score?.value
+      );
+      const finalScore = Number.isFinite(scoreNum)
+        ? clamp(scoreNum, 0, 100)
+        : 0;
 
       const issues =
-        Number(r?.metrics?.totals?.issues ?? r?.metrics?.issues ?? r?.metrics?.total_issues ?? r?.metrics?.totalIssues) || 0;
+        Number(
+          response?.metrics?.totals?.issues ??
+            response?.metrics?.issues ??
+            response?.metrics?.total_issues ??
+            response?.metrics?.totalIssues
+        ) || 0;
 
       const loc =
-        Number(r?.metrics?.totals?.loc ?? r?.metrics?.loc ?? r?.metrics?.lines_of_code ?? r?.metrics?.linesOfCode) || 0;
+        Number(
+          response?.metrics?.totals?.loc ??
+            response?.metrics?.loc ??
+            response?.metrics?.lines_of_code ??
+            response?.metrics?.linesOfCode
+        ) || 0;
 
       const item: HistoryItem = {
         id,
@@ -483,7 +661,7 @@ export default function Dashboard() {
       };
 
       upsertHistory(item);
-      setSelectedHistoryId(id); // ✅ select newly created scan
+      setSelectedHistoryId(id);
       setStatus("DONE");
     } catch (e: any) {
       setStatus("ERROR");
@@ -525,11 +703,32 @@ export default function Dashboard() {
   }
 
   function loadHistoryItem(item: HistoryItem) {
-    setSelectedHistoryId(item.id); // ✅ selection
+    setSelectedHistoryId(item.id);
     refreshById(item.id);
   }
 
-  // Trend loader with key + endpoint fallbacks
+  async function copyFixAdvice(issue: AIEnrichedIssue, idx: number) {
+    const payload = [
+      `Rule: ${issue.rule_id || "Unknown Rule"}`,
+      `Tool: ${issue.tool || "Unknown Tool"}`,
+      `Severity: ${issue.severity || "unknown"}`,
+      `File: ${cleanFilePath(issue.file) || "Unknown file"}`,
+      issue.line ? `Line: ${issue.line}` : "",
+      issue.message ? `Message: ${issue.message}` : "",
+      issue.explanation ? `Explanation: ${issue.explanation}` : "",
+      issue.fix ? `Suggested Fix: ${issue.fix}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    try {
+      await navigator.clipboard.writeText(payload);
+      setCopiedIssueKey(`${issue.rule_id || "rule"}-${idx}`);
+    } catch {
+      setCopiedIssueKey(null);
+    }
+  }
+
   useEffect(() => {
     const selectedProjectName = (
       selectedHistoryItem?.projectName ||
@@ -564,18 +763,18 @@ export default function Dashboard() {
       const urls: string[] = [];
 
       for (const k of keyCandidates) {
-        const encK = encodeURIComponent(k);
-        urls.push(`${apiBase}/projects/${encK}/trend?limit=30`);
-        urls.push(`${apiBase}/projects/${encK}/trend`);
-        urls.push(`${apiBase}/scans/trend?project_key=${encK}&limit=30`);
-        urls.push(`${apiBase}/scans/trend?project_key=${encK}`);
-        urls.push(`${apiBase}/projects/trend?project_key=${encK}&limit=30`);
-        urls.push(`${apiBase}/projects/trend?project_key=${encK}`);
+        const encoded = encodeURIComponent(k);
+        urls.push(`${apiBase}/projects/${encoded}/trend?limit=30`);
+        urls.push(`${apiBase}/projects/${encoded}/trend`);
+        urls.push(`${apiBase}/scans/trend?project_key=${encoded}&limit=30`);
+        urls.push(`${apiBase}/scans/trend?project_key=${encoded}`);
+        urls.push(`${apiBase}/projects/trend?project_key=${encoded}&limit=30`);
+        urls.push(`${apiBase}/projects/trend?project_key=${encoded}`);
       }
 
-      for (const u of urls) {
+      for (const url of urls) {
         try {
-          const res = await fetch(u);
+          const res = await fetch(url);
           if (!res.ok) continue;
 
           const arr = await parseTrendResponse(res);
@@ -583,25 +782,36 @@ export default function Dashboard() {
           if (!Array.isArray(arr) || arr.length === 0) continue;
 
           const points: TrendPoint[] = [];
-          for (const it of arr) {
-            if (!it || typeof it !== "object") continue;
 
-            const rawTs: any = (it as any).timestamp ?? (it as any).ts ?? (it as any).time ?? 0;
+          for (const item of arr) {
+            if (!item || typeof item !== "object") continue;
+
+            const rawTs: any = item.timestamp ?? item.ts ?? item.time ?? 0;
 
             let ts = 0;
             if (typeof rawTs === "number") ts = rawTs;
             else if (typeof rawTs === "string") {
-              const d = Date.parse(rawTs);
-              ts = Number.isFinite(d) ? d : 0;
+              const parsed = Date.parse(rawTs);
+              ts = Number.isFinite(parsed) ? parsed : 0;
             }
 
-            const score = Number((it as any).final_score ?? (it as any).score ?? (it as any).finalScore ?? 0) || 0;
+            const score =
+              Number(item.final_score ?? item.score ?? item.finalScore ?? 0) || 0;
 
-            const totals = (it as any).totals ?? {};
-            const issues = Number(totals.issues ?? (it as any).issues ?? 0) || 0;
-            const loc = Number(totals.loc ?? (it as any).loc ?? 0) || 0;
+            const totals = item.totals ?? {};
+            const nestedSeverity = totals.by_severity ?? {};
+            const issues =
+              Number(totals.issues ?? item.issues ?? nestedSeverity.issues ?? 0) || 0;
+            const loc = Number(totals.loc ?? item.loc ?? 0) || 0;
 
-            if (ts) points.push({ ts, score: clamp(score, 0, 100), issues, loc });
+            if (ts) {
+              points.push({
+                ts,
+                score: clamp(score, 0, 100),
+                issues,
+                loc,
+              });
+            }
           }
 
           points.sort((a, b) => a.ts - b.ts);
@@ -615,42 +825,87 @@ export default function Dashboard() {
 
       setTrend([]);
       setTrendLoading(false);
-      setTrendError("Trend not available yet. Run a few scans.");
+      setTrendError("Trend not available from backend.");
     }
 
     loadTrend();
+
     return () => {
       cancelled = true;
     };
-  }, [apiBase, selectedHistoryItem?.projectName, derived.backendProjectKey, derived.backendProjectName, derived.rootUsed, projectName]);
+  }, [
+    apiBase,
+    selectedHistoryItem?.projectName,
+    derived.backendProjectKey,
+    derived.backendProjectName,
+    derived.rootUsed,
+    projectName,
+  ]);
 
   const heatmapRows = useMemo(() => {
     const hm = derived.heatmap || {};
-    const rows = Object.entries(hm).map(([file, v]) => {
-      const low = Number(v?.low ?? 0) || 0;
-      const medium = Number(v?.medium ?? 0) || 0;
-      const high = Number(v?.high ?? 0) || 0;
+    const rows = Object.entries(hm).map(([file, value]) => {
+      const low = Number(value?.low ?? 0) || 0;
+      const medium = Number(value?.medium ?? 0) || 0;
+      const high = Number(value?.high ?? 0) || 0;
       const total = low + medium + high;
       return { file: cleanFilePath(file), low, medium, high, total };
     });
+
     rows.sort((a, b) => b.total - a.total);
     return rows.slice(0, 12);
   }, [derived.heatmap]);
 
-  const trendChartData = useMemo(() => {
-    return (trend || []).map((p) => ({
-      name: formatShortTime(p.ts),
-      score: p.score,
-      issues: p.issues,
-    }));
-  }, [trend]);
+  const localTrendFallback = useMemo(() => {
+    const selectedProjectName = (
+      selectedHistoryItem?.projectName ||
+      derived.backendProjectName ||
+      projectName ||
+      ""
+    ).trim();
 
-  // ✅ use selected history first, then current scan, then latest
+    if (!selectedProjectName) return [];
+
+    const normalized = selectedProjectName.toLowerCase().trim();
+
+    return history
+      .filter((h) => h.projectName.toLowerCase().trim() === normalized)
+      .map((h) => ({
+        ts: h.createdAt,
+        score: clamp(Number(h.score ?? 0), 0, 100),
+        issues: Number(h.issues ?? 0),
+        loc: Number(h.loc ?? 0),
+      }))
+      .sort((a, b) => a.ts - b.ts)
+      .slice(-30);
+  }, [
+    history,
+    selectedHistoryItem?.projectName,
+    derived.backendProjectName,
+    projectName,
+  ]);
+
+  const effectiveTrend = trend.length > 0 ? trend : localTrendFallback;
+
+  const trendChartData = useMemo(() => {
+    return effectiveTrend.map((point) => ({
+      name: formatShortTime(point.ts),
+      score: point.score,
+      issues: point.issues,
+    }));
+  }, [effectiveTrend]);
+
+  const trendSourceLabel =
+    trend.length > 0
+      ? "backend trend"
+      : localTrendFallback.length > 0
+      ? "local history"
+      : "";
+
   const activeScanId = (selectedHistoryId || scanId || latest?.id || "").trim();
 
   return (
     <div className="relative min-h-screen px-6 pt-10 pb-24">
-      {/* Header */}
       <header className="pt-10 pb-6 text-center">
         <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-slate-900">
           Security &amp; Quality Dashboard
@@ -665,14 +920,13 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Top cards row */}
       <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Input Card */}
         <div className="lg:col-span-2 rounded-3xl bg-white/45 border border-white/40 shadow-sm p-6">
-          {/* Project row */}
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="flex-1">
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Project name</label>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">
+                Project name
+              </label>
               <input
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
@@ -690,7 +944,6 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* Mode tabs */}
           <div className="mt-5 flex gap-2">
             <button
               onClick={() => setMode("paste")}
@@ -724,19 +977,22 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* Mode content */}
           <div className="mt-5">
             {mode === "paste" && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Virtual filename</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Virtual filename
+                  </label>
                   <input
                     value={filename}
                     onChange={(e) => setFilename(e.target.value)}
                     className="w-full rounded-2xl border border-white/50 bg-white/60 px-4 py-3 outline-none focus:ring-2 focus:ring-sky-200"
                     placeholder="main.py"
                   />
-                  <div className="mt-2 text-xs text-slate-500">Stored in backend for scanning.</div>
+                  <div className="mt-2 text-xs text-slate-500">
+                    Stored in backend for scanning.
+                  </div>
 
                   <div className="mt-6 text-sm text-slate-700">
                     <span className="font-semibold">Status:</span> {statusLine}
@@ -744,7 +1000,9 @@ export default function Dashboard() {
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Code</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Code
+                  </label>
                   <textarea
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
@@ -758,7 +1016,9 @@ export default function Dashboard() {
             {mode === "upload" && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-slate-700 mb-3">Upload Project (.zip)</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-3">
+                    Upload Project (.zip)
+                  </label>
 
                   <input
                     id="zip-upload"
@@ -773,14 +1033,23 @@ export default function Dashboard() {
                     className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-white/60 hover:bg-white/80 transition cursor-pointer py-10 px-6 text-center"
                   >
                     <div className="text-3xl mb-3">📦</div>
-                    <div className="text-sm font-semibold text-slate-800">Click to upload ZIP file</div>
-                    <div className="text-xs text-slate-500 mt-1">Only .zip files supported</div>
+                    <div className="text-sm font-semibold text-slate-800">
+                      Click to upload ZIP file
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      Only .zip files supported
+                    </div>
                   </label>
 
                   {zipFile && (
                     <div className="mt-4 flex items-center justify-between bg-white/70 border border-white/50 rounded-xl px-4 py-3 text-sm">
-                      <span className="font-medium text-slate-800 truncate">{zipFile.name}</span>
-                      <button onClick={() => setZipFile(null)} className="text-xs text-rose-600 hover:underline">
+                      <span className="font-medium text-slate-800 truncate">
+                        {zipFile.name}
+                      </span>
+                      <button
+                        onClick={() => setZipFile(null)}
+                        className="text-xs text-rose-600 hover:underline"
+                      >
                         Remove
                       </button>
                     </div>
@@ -794,7 +1063,8 @@ export default function Dashboard() {
                 <div className="rounded-2xl bg-white/40 border border-white/40 p-5 text-sm text-slate-600">
                   Upload your project as a zip.
                   <div className="mt-2 text-xs text-slate-500">
-                    Recommended: remove <code>node_modules</code>, <code>.venv</code>, <code>dist</code>, <code>build</code> before zipping.
+                    Recommended: remove <code>node_modules</code>, <code>.venv</code>,{" "}
+                    <code>dist</code>, <code>build</code> before zipping.
                   </div>
                 </div>
               </div>
@@ -803,7 +1073,9 @@ export default function Dashboard() {
             {mode === "repo" && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="md:col-span-2">
-                  <label className="block text-sm font-semibold text-slate-700 mb-2">Repository URL</label>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Repository URL
+                  </label>
                   <input
                     value={repoUrl}
                     onChange={(e) => setRepoUrl(e.target.value)}
@@ -811,7 +1083,9 @@ export default function Dashboard() {
                     placeholder="https://github.com/user/repo"
                   />
 
-                  <label className="block text-sm font-semibold text-slate-700 mt-4 mb-2">GitHub Token (optional)</label>
+                  <label className="block text-sm font-semibold text-slate-700 mt-4 mb-2">
+                    GitHub Token (optional)
+                  </label>
                   <input
                     value={githubToken}
                     onChange={(e) => setGithubToken(e.target.value)}
@@ -825,7 +1099,8 @@ export default function Dashboard() {
                 </div>
 
                 <div className="rounded-2xl bg-white/40 border border-white/40 p-5 text-sm text-slate-600">
-                  Repo ingestion is optional (public repos). If you later add auth, we’ll wire it cleanly.
+                  Repo ingestion is optional (public repos). If you later add auth,
+                  we’ll wire it cleanly.
                 </div>
               </div>
             )}
@@ -838,14 +1113,18 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* History card */}
         <div className="rounded-3xl bg-white/45 border border-white/40 shadow-sm p-6">
           <div className="flex items-start justify-between">
             <div>
               <div className="text-xl font-extrabold text-slate-900">History</div>
-              <div className="text-xs text-slate-500 mt-1">Saved locally in this browser.</div>
+              <div className="text-xs text-slate-500 mt-1">
+                Saved locally in this browser.
+              </div>
             </div>
-            <button onClick={clearHistory} className="text-sm font-semibold text-slate-600 hover:underline">
+            <button
+              onClick={clearHistory}
+              className="text-sm font-semibold text-slate-600 hover:underline"
+            >
               Clear
             </button>
           </div>
@@ -853,16 +1132,17 @@ export default function Dashboard() {
           <div className="mt-4 space-y-3 max-h-[360px] overflow-auto pr-1">
             {history.length === 0 && (
               <div className="rounded-2xl bg-white/55 border border-white/40 p-4 text-sm text-slate-600">
-                No history yet. Run your first scan ✨
+                No history yet ✨
               </div>
             )}
 
-            {history.map((h) => {
-              const isSelected = selectedHistoryId === h.id;
+            {history.map((item) => {
+              const isSelected = selectedHistoryId === item.id;
+
               return (
                 <button
-                  key={h.id}
-                  onClick={() => loadHistoryItem(h)}
+                  key={item.id}
+                  onClick={() => loadHistoryItem(item)}
                   className={`w-full text-left rounded-2xl border p-4 transition ${
                     isSelected
                       ? "bg-slate-900 text-white border-slate-900"
@@ -870,31 +1150,56 @@ export default function Dashboard() {
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <div className={`font-bold truncate ${isSelected ? "text-white" : "text-slate-900"}`}>
-                      {h.projectName}
+                    <div
+                      className={`font-bold truncate ${
+                        isSelected ? "text-white" : "text-slate-900"
+                      }`}
+                    >
+                      {item.projectName}
                     </div>
-                    <div className={`font-extrabold ${isSelected ? "text-white" : "text-slate-900"}`}>
-                      {(h.score ?? 0).toFixed(2)}/100
+
+                    <div
+                      className={`font-extrabold ${
+                        isSelected ? "text-white" : "text-slate-900"
+                      }`}
+                    >
+                      {(item.score ?? 0).toFixed(2)}/100
                     </div>
                   </div>
 
-                  <div className={`mt-1 text-xs ${isSelected ? "text-slate-200" : "text-slate-600"}`}>
-                    {h.mode === "paste" ? `Paste • ${h.filename ?? "file"}` : h.mode === "upload" ? "Upload ZIP" : "Repo"}
+                  <div
+                    className={`mt-1 text-xs ${
+                      isSelected ? "text-slate-200" : "text-slate-600"
+                    }`}
+                  >
+                    {item.mode === "paste"
+                      ? `Paste • ${item.filename ?? "file"}`
+                      : item.mode === "upload"
+                      ? "Upload ZIP"
+                      : "Repo"}
                     {" • "}
-                    {h.issues ?? 0} issue{(h.issues ?? 0) === 1 ? "" : "s"}
+                    {item.issues ?? 0} issue{(item.issues ?? 0) === 1 ? "" : "s"}
                     {" • "}
-                    LOC {h.loc ?? 0}
+                    LOC {item.loc ?? 0}
                     {" • "}
-                    {fmtAgo(h.createdAt)}
+                    {fmtAgo(item.createdAt)}
                   </div>
 
                   <div className="mt-2 flex items-center justify-between">
-                    <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border ${badgeClasses(h.risk ?? "High Risk")}`}>
-                      {h.risk ?? "High Risk"}
+                    <span
+                      className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border ${badgeClasses(
+                        item.risk ?? "High Risk"
+                      )}`}
+                    >
+                      {item.risk ?? "High Risk"}
                     </span>
 
-                    <span className={`text-[11px] truncate max-w-[200px] ${isSelected ? "text-slate-200" : "text-slate-500"}`}>
-                      ID: {h.id.slice(0, 8)}…{h.id.slice(-4)}
+                    <span
+                      className={`text-[11px] truncate max-w-[200px] ${
+                        isSelected ? "text-slate-200" : "text-slate-500"
+                      }`}
+                    >
+                      ID: {item.id.slice(0, 8)}…{item.id.slice(-4)}
                     </span>
                   </div>
                 </button>
@@ -911,14 +1216,19 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Results */}
       <div className="max-w-6xl mx-auto mt-6 rounded-3xl bg-white/45 border border-white/40 shadow-sm p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-2xl font-extrabold text-slate-900">Latest results</div>
+            <div className="text-2xl font-extrabold text-slate-900">
+              Latest results
+            </div>
             <div className="text-xs text-slate-500 mt-1">
               Your score &amp; metrics appear here after a scan
-              {selectedHistoryItem ? ` (Selected: ${selectedHistoryItem.projectName} • ${fmtAgo(selectedHistoryItem.createdAt)})` : ""}
+              {selectedHistoryItem
+                ? ` (Selected: ${selectedHistoryItem.projectName} • ${fmtAgo(
+                    selectedHistoryItem.createdAt
+                  )})`
+                : ""}
             </div>
           </div>
 
@@ -934,56 +1244,267 @@ export default function Dashboard() {
               View all issues →
             </button>
 
-            <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border ${badgeClasses(derived.risk)}`}>
+            <span
+              className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border ${badgeClasses(
+                derived.risk
+              )}`}
+            >
               {derived.risk}
             </span>
           </div>
         </div>
 
-        {/* Score tiles */}
+        {(derived.aiHeadline ||
+          derived.aiSecurityOverview ||
+          derived.aiQualityOverview ||
+          derived.aiPriorityAction ||
+          derived.aiRecommendations.length > 0) && (
+          <div className="mt-5 rounded-2xl bg-white/55 border border-white/40 p-5">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-[11px] tracking-wide font-bold text-slate-500">
+                    AI SUMMARY
+                  </div>
+                  <div className="mt-1 text-lg font-extrabold text-slate-900">
+                    {derived.aiHeadline || "AI summary ready"}
+                  </div>
+                </div>
+
+                <span
+                  className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border ${badgeClasses(
+                    derived.risk
+                  )}`}
+                >
+                  {derived.aiRiskLevel || derived.risk}
+                </span>
+              </div>
+
+              {derived.aiPriorityAction && (
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                  <div className="text-xs font-bold uppercase tracking-wide text-amber-700">
+                    Priority Action
+                  </div>
+                  <div className="mt-1 text-sm text-amber-900">
+                    {derived.aiPriorityAction}
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-2xl border border-white/40 bg-white/70 p-4">
+                  <div className="text-sm font-extrabold text-slate-900">
+                    Security Overview
+                  </div>
+                  <div className="mt-2 text-sm text-slate-600 leading-6">
+                    {derived.aiSecurityOverview || "No security summary yet."}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/40 bg-white/70 p-4">
+                  <div className="text-sm font-extrabold text-slate-900">
+                    Quality Overview
+                  </div>
+                  <div className="mt-2 text-sm text-slate-600 leading-6">
+                    {derived.aiQualityOverview || "No quality summary yet."}
+                  </div>
+                </div>
+              </div>
+
+              {derived.aiRecommendations.length > 0 && (
+                <div>
+                  <div className="text-sm font-extrabold text-slate-900">
+                    Recommendations
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {derived.aiRecommendations.map((item, idx) => (
+                      <span
+                        key={`${item}-${idx}`}
+                        className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-medium text-sky-700"
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {derived.topRiskyIssues.length > 0 && (
+          <div className="mt-5 rounded-2xl bg-white/55 border border-white/40 p-5">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="text-[11px] tracking-wide font-bold text-slate-500">
+                  TOP RISKY ISSUES
+                </div>
+                <div className="mt-1 text-lg font-extrabold text-slate-900">
+                  Highest-priority issue previews
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  if (!activeScanId) return;
+                  navigate(`/issues?scan_id=${encodeURIComponent(activeScanId)}`);
+                }}
+                disabled={!activeScanId}
+                className="rounded-xl bg-white/70 border border-white/50 px-4 py-2 text-sm font-bold text-slate-800 hover:bg-white/85 transition disabled:opacity-50"
+              >
+                Open detailed issue view
+              </button>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
+              {derived.topRiskyIssues.map((issue, idx) => {
+                const issueKey = `${issue.rule_id || "rule"}-${idx}`;
+                return (
+                  <div
+                    key={`${issue.tool}-${issue.rule_id}-${issue.file}-${issue.line}-${idx}`}
+                    className="rounded-2xl border border-white/40 bg-white/70 p-4"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${severityBadgeClasses(
+                          issue.severity
+                        )}`}
+                      >
+                        {String(issue.severity || "low").toUpperCase()}
+                      </span>
+
+                      <span
+                        className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-bold ${toolBadgeClasses(
+                          issue.tool
+                        )}`}
+                      >
+                        {issue.tool || "tool"}
+                      </span>
+
+                      {issue.priority ? (
+                        <span className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-800">
+                          {issue.priority}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="mt-3 text-base font-extrabold text-slate-900">
+                      {issue.rule_id || "Unknown Rule"}
+                    </div>
+
+                    <div className="mt-1 text-xs text-slate-500">
+                      {cleanFilePath(issue.file) || "Unknown file"}
+                      {issue.line ? ` • line ${issue.line}` : ""}
+                    </div>
+
+                    <div className="mt-3 text-sm font-semibold text-slate-800">
+                      {issue.message || "No issue message available."}
+                    </div>
+
+                    {issue.explanation ? (
+                      <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2">
+                        <div className="text-[11px] font-bold uppercase tracking-wide text-sky-700">
+                          Explanation
+                        </div>
+                        <div className="mt-1 text-sm leading-6 text-sky-950">
+                          {issue.explanation}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {issue.fix ? (
+                      <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+                        <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-700">
+                          Suggested Fix
+                        </div>
+                        <div className="mt-1 text-sm leading-6 text-emerald-950">
+                          {issue.fix}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="mt-3 flex items-center justify-end">
+                      <button
+                        onClick={() => copyFixAdvice(issue, idx)}
+                        className="rounded-xl border border-white/50 bg-white/80 px-3 py-2 text-xs font-bold text-slate-800 hover:bg-white transition"
+                      >
+                        {copiedIssueKey === issueKey ? "Copied ✅" : "Copy Fix"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="mt-5 grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="rounded-2xl bg-white/55 border border-white/40 p-5">
-            <div className="text-[11px] tracking-wide font-bold text-slate-500">FINAL SCORE</div>
+            <div className="text-[11px] tracking-wide font-bold text-slate-500">
+              FINAL SCORE
+            </div>
             <div className="mt-2 text-3xl font-extrabold text-slate-900">
               {derived.finalScore.toFixed(2)}
               <span className="text-base font-bold text-slate-500">/100</span>
             </div>
-            <div className="mt-1 text-xs text-slate-500">Density-based scoring (0–100).</div>
+            <div className="mt-1 text-xs text-slate-500">
+              Density-based scoring (0–100).
+            </div>
           </div>
 
           <div className="rounded-2xl bg-white/55 border border-white/40 p-5">
-            <div className="text-[11px] tracking-wide font-bold text-slate-500">TOTAL ISSUES</div>
-            <div className="mt-2 text-3xl font-extrabold text-slate-900">{derived.issues}</div>
-            <div className="mt-1 text-xs text-slate-500">All tools combined.</div>
+            <div className="text-[11px] tracking-wide font-bold text-slate-500">
+              TOTAL ISSUES
+            </div>
+            <div className="mt-2 text-3xl font-extrabold text-slate-900">
+              {derived.issues}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
+              All tools combined.
+            </div>
           </div>
 
           <div className="rounded-2xl bg-white/55 border border-white/40 p-5">
-            <div className="text-[11px] tracking-wide font-bold text-slate-500">PENALTY</div>
-            <div className="mt-2 text-3xl font-extrabold text-slate-900">{derived.penalty.toFixed(2)}</div>
+            <div className="text-[11px] tracking-wide font-bold text-slate-500">
+              PENALTY
+            </div>
+            <div className="mt-2 text-3xl font-extrabold text-slate-900">
+              {derived.penalty.toFixed(2)}
+            </div>
             <div className="mt-1 text-xs text-slate-500">Score reduction.</div>
           </div>
 
           <div className="rounded-2xl bg-white/55 border border-white/40 p-5">
-            <div className="text-[11px] tracking-wide font-bold text-slate-500">LOC</div>
-            <div className="mt-2 text-3xl font-extrabold text-slate-900">{derived.loc}</div>
+            <div className="text-[11px] tracking-wide font-bold text-slate-500">
+              LOC
+            </div>
+            <div className="mt-2 text-3xl font-extrabold text-slate-900">
+              {derived.loc}
+            </div>
             <div className="mt-1 text-xs text-slate-500">Lines of code.</div>
           </div>
         </div>
 
-        {/* Extra tiles */}
         <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="rounded-2xl bg-white/55 border border-white/40 p-5">
-            <div className="font-extrabold text-slate-900">Most recurring issues</div>
+            <div className="font-extrabold text-slate-900">
+              Most recurring issues
+            </div>
             <div className="mt-3 space-y-2">
               {derived.recurring?.length ? (
-                derived.recurring.slice(0, 5).map((x) => (
-                  <div key={`${x.key}-${x.count}`} className="flex items-center justify-between text-sm">
-                    <span className="font-semibold text-slate-800">{x.key}</span>
-                    <span className="text-slate-600">{x.count}</span>
+                derived.recurring.slice(0, 5).map((item) => (
+                  <div
+                    key={`${item.key}-${item.count}`}
+                    className="flex items-center justify-between text-sm"
+                  >
+                    <span className="font-semibold text-slate-800">{item.key}</span>
+                    <span className="text-slate-600">{item.count}</span>
                   </div>
                 ))
               ) : (
-                <div className="text-sm text-slate-600">No recurring issues yet.</div>
+                <div className="text-sm text-slate-600">
+                  No recurring issues yet.
+                </div>
               )}
             </div>
           </div>
@@ -992,24 +1513,34 @@ export default function Dashboard() {
             <div className="font-extrabold text-slate-900">Top files</div>
             <div className="mt-3 space-y-2">
               {derived.topFiles?.length ? (
-                derived.topFiles.slice(0, 5).map((x: any) => (
-                  <div key={x.file} className="flex items-center justify-between text-sm">
-                    <span className="font-semibold text-slate-800 truncate">{cleanFilePath(x.file)}</span>
-                    <span className="text-slate-600">{Number(x.count ?? x.issues ?? 0)}</span>
+                derived.topFiles.slice(0, 5).map((item: any) => (
+                  <div
+                    key={item.file}
+                    className="flex items-center justify-between text-sm"
+                  >
+                    <span className="font-semibold text-slate-800 truncate">
+                      {cleanFilePath(item.file)}
+                    </span>
+                    <span className="text-slate-600">
+                      {Number(item.count ?? item.issues ?? 0)}
+                    </span>
                   </div>
                 ))
               ) : (
-                <div className="text-sm text-slate-600">No file breakdown yet.</div>
+                <div className="text-sm text-slate-600">
+                  No file breakdown yet.
+                </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Heatmap + Trend */}
         <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="rounded-2xl bg-white/55 border border-white/40 p-5">
             <div className="font-extrabold text-slate-900">Heatmap</div>
-            <div className="mt-1 text-xs text-slate-500">Files with severity counts (top 12).</div>
+            <div className="mt-1 text-xs text-slate-500">
+              Files with severity counts (top 12).
+            </div>
 
             <div className="mt-4 overflow-auto">
               {heatmapRows.length ? (
@@ -1024,19 +1555,25 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {heatmapRows.map((r) => (
-                      <tr key={r.file} className="border-t border-white/40">
-                        <td className="py-2 pr-2 font-semibold text-slate-800 truncate max-w-[260px]">{r.file}</td>
-                        <td className="py-2 px-2 text-slate-700">{r.high}</td>
-                        <td className="py-2 px-2 text-slate-700">{r.medium}</td>
-                        <td className="py-2 px-2 text-slate-700">{r.low}</td>
-                        <td className="py-2 pl-2 text-slate-900 font-bold">{r.total}</td>
+                    {heatmapRows.map((row) => (
+                      <tr key={row.file} className="border-t border-white/40">
+                        <td className="py-2 pr-2 font-semibold text-slate-800 truncate max-w-[260px]">
+                          {row.file}
+                        </td>
+                        <td className="py-2 px-2 text-slate-700">{row.high}</td>
+                        <td className="py-2 px-2 text-slate-700">{row.medium}</td>
+                        <td className="py-2 px-2 text-slate-700">{row.low}</td>
+                        <td className="py-2 pl-2 text-slate-900 font-bold">
+                          {row.total}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               ) : (
-                <div className="text-sm text-slate-600">Heatmap not available yet.</div>
+                <div className="text-sm text-slate-600">
+                  Heatmap not available yet.
+                </div>
               )}
             </div>
           </div>
@@ -1044,23 +1581,34 @@ export default function Dashboard() {
           <div className="rounded-2xl bg-white/55 border border-white/40 p-5">
             <div className="font-extrabold text-slate-900">Trend</div>
             <div className="mt-1 text-xs text-slate-500">
-              Score trend (last ~30 scans).{" "}
+              {"Score trend (last ~30 scans). "}
+              {trendSourceLabel ? (
+                <>
+                  {"Using "}
+                  <span className="font-semibold">{trendSourceLabel}</span>
+                  {". "}
+                </>
+              ) : null}
               {derived.backendProjectKey ? (
-                <span className="text-slate-500">
-                  (project key: <span className="font-semibold">{derived.backendProjectKey}</span>)
-                </span>
+                <>
+                  {"("}
+                  {"project key: "}
+                  <span className="font-semibold">{derived.backendProjectKey}</span>
+                  {")"}
+                </>
               ) : derived.rootUsed ? (
-                <span className="text-slate-500">
-                  (key hint: <span className="font-semibold">{derived.rootUsed}</span>)
-                </span>
+                <>
+                  {"("}
+                  {"key hint: "}
+                  <span className="font-semibold">{derived.rootUsed}</span>
+                  {")"}
+                </>
               ) : null}
             </div>
 
             <div className="mt-4 h-[220px]">
               {trendLoading ? (
                 <div className="text-sm text-slate-600">Loading trend…</div>
-              ) : trendError ? (
-                <div className="text-sm text-slate-600">{trendError}</div>
               ) : trendChartData.length ? (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={trendChartData}>
@@ -1068,19 +1616,25 @@ export default function Dashboard() {
                     <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                     <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} />
                     <Tooltip />
-                    <Line type="monotone" dataKey="score" strokeWidth={2} dot={false} />
+                    <Line
+                      type="monotone"
+                      dataKey="score"
+                      strokeWidth={2}
+                      dot={false}
+                    />
                   </LineChart>
                 </ResponsiveContainer>
               ) : (
-                <div className="text-sm text-slate-600">No trend data yet. Run a few scans.</div>
+                <div className="text-sm text-slate-600">
+                  {trendError || "No trend data yet. Run a few scans."}
+                </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Raw JSON */}
         <button
-          onClick={() => setShowRaw((v) => !v)}
+          onClick={() => setShowRaw((prev) => !prev)}
           className="mt-5 text-sm font-bold text-slate-700 hover:underline"
         >
           {showRaw ? "▼" : "▶"} Raw results JSON (debug)
