@@ -38,6 +38,7 @@ type AIEnrichedIssue = {
   impact?: string;
   priority_score?: number;
   priority?: string;
+  explanation_source?: string;
 };
 
 type AISummary = {
@@ -55,11 +56,13 @@ type AISummary = {
     security_overview?: string;
     quality_overview?: string;
     priority_action?: string;
+    score_explanation?: string;
   };
   top_risky_issues?: AIEnrichedIssue[];
   issues_enriched?: AIEnrichedIssue[];
   recommendations?: string[];
   note?: string;
+  llm_used?: boolean;
 };
 
 type ScanResultsResponse = {
@@ -458,6 +461,9 @@ export default function Dashboard() {
     );
     const aiQualityOverview = cleanText(aiSummary?.summary?.quality_overview);
     const aiPriorityAction = cleanText(aiSummary?.summary?.priority_action);
+    const aiScoreExplanation = cleanText(
+      aiSummary?.summary?.score_explanation
+    );
     const aiRecommendations = Array.isArray(aiSummary?.recommendations)
       ? aiSummary.recommendations
           .map((x) => cleanText(x))
@@ -492,9 +498,13 @@ export default function Dashboard() {
       aiSecurityOverview,
       aiQualityOverview,
       aiPriorityAction,
+      aiScoreExplanation,
       aiRecommendations,
       aiRiskLevel,
       topRiskyIssues,
+      aiExists: Boolean(results?.ai?.exists),
+      llmUsed: Boolean(aiSummary?.llm_used),
+      aiNote: cleanText(aiSummary?.note),
     };
   }, [results]);
 
@@ -717,6 +727,8 @@ export default function Dashboard() {
       issue.message ? `Message: ${issue.message}` : "",
       issue.explanation ? `Explanation: ${issue.explanation}` : "",
       issue.fix ? `Suggested Fix: ${issue.fix}` : "",
+      issue.risk ? `Risk: ${issue.risk}` : "",
+      issue.impact ? `Impact: ${issue.impact}` : "",
     ]
       .filter(Boolean)
       .join("\n");
@@ -799,9 +811,7 @@ export default function Dashboard() {
               Number(item.final_score ?? item.score ?? item.finalScore ?? 0) || 0;
 
             const totals = item.totals ?? {};
-            const nestedSeverity = totals.by_severity ?? {};
-            const issues =
-              Number(totals.issues ?? item.issues ?? nestedSeverity.issues ?? 0) || 0;
+            const issues = Number(totals.issues ?? item.issues ?? 0) || 0;
             const loc = Number(totals.loc ?? item.loc ?? 0) || 0;
 
             if (ts) {
@@ -1258,6 +1268,7 @@ export default function Dashboard() {
           derived.aiSecurityOverview ||
           derived.aiQualityOverview ||
           derived.aiPriorityAction ||
+          derived.aiScoreExplanation ||
           derived.aiRecommendations.length > 0) && (
           <div className="mt-5 rounded-2xl bg-white/55 border border-white/40 p-5">
             <div className="flex flex-col gap-3">
@@ -1271,13 +1282,21 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-                <span
-                  className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border ${badgeClasses(
-                    derived.risk
-                  )}`}
-                >
-                  {derived.aiRiskLevel || derived.risk}
-                </span>
+                <div className="flex items-center gap-2">
+                  {derived.aiExists ? (
+                    <span className="inline-flex rounded-full border border-white/50 bg-white/80 px-3 py-1 text-xs font-bold text-slate-700">
+                      {derived.llmUsed ? "LLM + Rules" : "Rules"}
+                    </span>
+                  ) : null}
+
+                  <span
+                    className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold border ${badgeClasses(
+                      derived.risk
+                    )}`}
+                  >
+                    {derived.aiRiskLevel || derived.risk}
+                  </span>
+                </div>
               </div>
 
               {derived.aiPriorityAction && (
@@ -1287,6 +1306,17 @@ export default function Dashboard() {
                   </div>
                   <div className="mt-1 text-sm text-amber-900">
                     {derived.aiPriorityAction}
+                  </div>
+                </div>
+              )}
+
+              {derived.aiScoreExplanation && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <div className="text-xs font-bold uppercase tracking-wide text-slate-700">
+                    Score Explanation
+                  </div>
+                  <div className="mt-1 text-sm text-slate-800 leading-6">
+                    {derived.aiScoreExplanation}
                   </div>
                 </div>
               )}
@@ -1328,6 +1358,10 @@ export default function Dashboard() {
                   </div>
                 </div>
               )}
+
+              {derived.aiNote ? (
+                <div className="text-xs text-slate-500">{derived.aiNote}</div>
+              ) : null}
             </div>
           </div>
         )}
@@ -1386,6 +1420,12 @@ export default function Dashboard() {
                           {issue.priority}
                         </span>
                       ) : null}
+
+                      {issue.explanation_source ? (
+                        <span className="inline-flex rounded-full border border-white/50 bg-white/80 px-2.5 py-1 text-xs font-bold text-slate-700">
+                          {issue.explanation_source === "llm" ? "LLM" : "Rule"}
+                        </span>
+                      ) : null}
                     </div>
 
                     <div className="mt-3 text-base font-extrabold text-slate-900">
@@ -1420,6 +1460,20 @@ export default function Dashboard() {
                         <div className="mt-1 text-sm leading-6 text-emerald-950">
                           {issue.fix}
                         </div>
+                      </div>
+                    ) : null}
+
+                    {issue.risk ? (
+                      <div className="mt-3 text-xs text-slate-600">
+                        <span className="font-bold text-slate-700">Risk:</span>{" "}
+                        {issue.risk}
+                      </div>
+                    ) : null}
+
+                    {issue.impact ? (
+                      <div className="mt-1 text-xs text-slate-600">
+                        <span className="font-bold text-slate-700">Impact:</span>{" "}
+                        {issue.impact}
                       </div>
                     ) : null}
 
