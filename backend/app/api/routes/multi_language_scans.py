@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 
-from app.services.api.routes import scans  # type: ignore
+from app.api.routes import scans
 from app.services.pipeline.simple_pipeline import run_tools_for_scan
 
 router = APIRouter()
