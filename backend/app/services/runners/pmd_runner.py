@@ -32,7 +32,6 @@ def run_pmd(input_dir: Path, out_json: Path, warnings_json: Path) -> None:
         "rulesets/java/quickstart.xml,category/java/security.xml",
         "-f",
         "json",
-        "--no-fail-on-violation",
     ]
 
     result = run_command(cmd, timeout_sec=180)
@@ -58,12 +57,15 @@ def run_pmd(input_dir: Path, out_json: Path, warnings_json: Path) -> None:
     else:
         write_json(out_json, {"pmdVersion": None, "files": [], "loc": loc})
 
-    if result["stderr"].strip() and result["returncode"] not in (0, 4):
+    # PMD can return a non-zero status when violations are found. Findings
+    # are data, not a pipeline failure, so preserve them from stdout.
+    if result["stderr"].strip():
         write_json(
             warnings_json,
             {
                 "tool": "pmd",
-                "warning": "PMD returned a non-standard status",
-                **result,
+                "warning": "PMD stderr output",
+                "stderr": result["stderr"],
+                "returncode": result["returncode"],
             },
         )
