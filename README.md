@@ -1,14 +1,16 @@
 ![Python](https://img.shields.io/badge/Python-3.x-blue)
+![Java](https://img.shields.io/badge/Java-17%2B-orange)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Backend-green)
 ![React](https://img.shields.io/badge/React-Frontend-blue)
 ![TypeScript](https://img.shields.io/badge/TypeScript-Frontend-blue)
 ![Ollama](https://img.shields.io/badge/Ollama-Local%20AI-black)
 ![Qwen3](https://img.shields.io/badge/Qwen3-8B-purple)
+![PMD](https://img.shields.io/badge/PMD-Java%20Analysis-blue)
 ![License](https://img.shields.io/badge/License-Educational-orange)
 
 # AI-Powered Code Intelligence & Review Platform
 
-A hybrid static-analysis and local-AI code intelligence platform designed to evaluate software quality, security risk, maintainability, and refactoring priorities.
+A hybrid static-analysis and local-AI code intelligence platform designed to evaluate software quality, security risk, maintainability, and refactoring priorities across supported source-code languages.
 
 The platform combines deterministic static-analysis tools with a locally running LLM through Ollama. Static-analysis results remain authoritative for issue detection, severity, metrics, and scoring, while the AI layer explains important findings in simple English and provides practical fixes based on the actual source code.
 
@@ -16,7 +18,7 @@ The platform combines deterministic static-analysis tools with a locally running
 
 ## 🚀 Project Overview
 
-The platform accepts source code through multiple ingestion methods, runs static analysis, normalizes findings into a unified issue model, calculates engineering metrics, produces a deterministic risk score, and optionally enriches important findings using a local LLM.
+The platform accepts source code through multiple ingestion methods, runs language-appropriate static analysis, normalizes findings into a unified issue model, calculates engineering metrics, produces a deterministic risk score, and enriches important findings using a local LLM.
 
 ### Current workflow
 
@@ -25,11 +27,15 @@ Paste Code / Upload ZIP / GitHub Repository
                     ↓
                Code Ingestion
                     ↓
-             Static Analysis
-          ┌─────────┴─────────┐
-          ↓                   ↓
-       Flake8              Bandit
-          └─────────┬─────────┘
+             Language Detection
+              /             \
+             /               \
+        Python               Java
+          ↓                    ↓
+   Flake8 + Bandit           PMD
+          \                    /
+           \                  /
+            └───────┬────────┘
                     ↓
            Issue Normalization
                     ↓
@@ -51,7 +57,7 @@ The AI layer is an enrichment layer rather than the source of truth. If the loca
 
 ## 🧠 Local AI Code Review
 
-The project now includes a fully local AI review pipeline using **Ollama** and **Qwen3 8B**.
+The project includes a fully local AI review pipeline using **Ollama** and **Qwen3 8B**.
 
 ### Why local AI?
 
@@ -87,7 +93,7 @@ For important findings, the backend reads a small source-code window around the 
 
 The context contains approximately five lines before and five lines after the finding, with the flagged line marked for clarity. The path is resolved safely inside the scan input directory before the source file is read.
 
-This allows the AI to explain the actual code instead of simply repeating the scanner message.
+This works for supported source files, including Java findings produced by PMD.
 
 ### AI issue output
 
@@ -198,15 +204,33 @@ explanation_source
 
 ## 🔎 Static Analysis
 
-The current Python analysis pipeline uses:
+The project currently supports language-specific static analysis.
 
-### Flake8
+### Python
+
+#### Flake8
 
 Used for Python code-quality and style findings such as formatting, unused imports, unused variables, syntax problems, and other linting violations.
 
-### Bandit
+#### Bandit
 
 Used for Python security-oriented static analysis, including potentially unsafe operations and security-sensitive coding patterns.
+
+### Java
+
+#### PMD
+
+PMD is used for Java static analysis.
+
+The current integration runs PMD using Java quickstart rules together with PMD's Java security rules. PMD findings are converted into the platform's unified issue model before metrics, scoring, and AI enrichment.
+
+PMD priority is mapped into the platform severity model:
+
+- PMD priority 1–2 → High
+- PMD priority 3 → Medium
+- PMD priority 4–5 → Low
+
+The original PMD priority and ruleset are retained in the normalized finding data.
 
 The scanner findings are normalized before being passed into the metrics, scoring, and AI layers.
 
@@ -223,7 +247,7 @@ Priority considers factors such as:
 - Security rules
 - Important correctness rules
 
-Only the highest-priority findings are sent for detailed AI enrichment rather than sending every issue to the model. This reduces unnecessary model processing while keeping important findings understandable.
+Only selected high-priority findings are sent for detailed AI enrichment rather than sending every issue to the model. This reduces unnecessary model processing while keeping important findings understandable.
 
 ---
 
@@ -241,6 +265,8 @@ The platform calculates and displays engineering metrics including:
 - Most recurring issues
 - Historical scan trends
 - Penalty breakdown
+
+LOC is calculated from the active supported-language analysis output, including Java source files when PMD is used.
 
 These metrics are generated independently of the AI layer.
 
@@ -302,8 +328,13 @@ The React dashboard provides an interactive interface for creating and reviewing
 ### Scan input modes
 
 - **Paste Code** — analyze source code entered directly in the dashboard
-- **Upload ZIP** — analyze an uploaded project archive
-- **Repository** — analyze a GitHub repository
+- **Upload ZIP** — analyze an uploaded project archive containing supported source files
+- **Repository** — analyze a GitHub repository containing supported source files
+
+### Currently supported source languages
+
+- Python (`.py`)
+- Java (`.java`)
 
 ### Dashboard capabilities
 
@@ -357,8 +388,27 @@ backend/app/services/ai/
 └─ rules.py
 ```
 
+### Language analysis services
+
+```text
+backend/app/services/runners/
+├─ flake8_runner.py
+├─ bandit_runner.py
+├─ pmd_runner.py
+└─ runner_utils.py
+```
+
+```text
+backend/app/services/processors/
+├─ normalize.py
+├─ normalize_pmd.py
+└─ metrics.py
+```
+
 - `generator.py` coordinates AI enrichment and deterministic fallback logic.
 - `llm_generator.py` communicates with the local Ollama HTTP API.
+- `pmd_runner.py` executes PMD for Java source analysis.
+- `normalize_pmd.py` converts PMD findings into the unified issue model.
 - `rules.py` contains deterministic rule-based explanations and fallback guidance.
 
 ---
@@ -377,6 +427,8 @@ backend/app/services/ai/
 - FastAPI
 - Flake8
 - Bandit
+- PMD
+- Java
 - Ollama
 - Qwen3 8B
 - Python standard-library HTTP client for Ollama communication
@@ -405,6 +457,8 @@ ai-code-intelligence-platform/
 │  ├─ app/
 │  │  ├─ api/
 │  │  │  └─ routes/
+│  │  │     ├─ scans.py
+│  │  │     └─ multi_language_scans.py
 │  │  ├─ services/
 │  │  │  ├─ ai/
 │  │  │  │  ├─ generator.py
@@ -414,7 +468,14 @@ ai-code-intelligence-platform/
 │  │  │  ├─ ingestion/
 │  │  │  ├─ pipeline/
 │  │  │  ├─ processors/
+│  │  │  │  ├─ normalize.py
+│  │  │  │  ├─ normalize_pmd.py
+│  │  │  │  └─ metrics.py
 │  │  │  ├─ runners/
+│  │  │  │  ├─ bandit_runner.py
+│  │  │  │  ├─ flake8_runner.py
+│  │  │  │  ├─ pmd_runner.py
+│  │  │  │  └─ runner_utils.py
 │  │  │  └─ scoring/
 │  │  └─ main.py
 │  └─ storage/
@@ -461,7 +522,25 @@ The backend expects Ollama at:
 http://localhost:11434
 ```
 
-### 2️⃣ Backend
+### 2️⃣ Java and PMD
+
+Java source analysis requires a Java runtime/JDK and PMD available on the system PATH.
+
+Verify Java:
+
+```bash
+java -version
+```
+
+Verify PMD:
+
+```bash
+pmd --version
+```
+
+The backend invokes the `pmd` command-line tool for `.java` files.
+
+### 3️⃣ Backend
 
 ```bash
 cd backend
@@ -477,7 +556,7 @@ Open:
 http://127.0.0.1:8000/docs
 ```
 
-### 3️⃣ Frontend
+### 4️⃣ Frontend
 
 Open a second terminal:
 
@@ -500,8 +579,8 @@ http://localhost:5173
 ```text
 1. Create Scan
 2. Paste Code / Upload ZIP / Enter Repository
-3. Ingest Source Code
-4. Run Static Analysis
+3. Ingest Supported Source Code
+4. Run Language-Specific Static Analysis
 5. Normalize Issues
 6. Generate Engineering Metrics
 7. Compute Deterministic Score
@@ -511,6 +590,30 @@ http://localhost:5173
 11. Generate AI Project Summary
 12. Store Scan and History
 13. Render Dashboard
+```
+
+Current language routing:
+
+```text
+Python (.py)
+   ↓
+Flake8 + Bandit
+
+Java (.java)
+   ↓
+PMD
+
+Both
+ ↓
+Unified Issues
+ ↓
+Metrics
+ ↓
+Scoring
+ ↓
+AI Enrichment
+ ↓
+Dashboard
 ```
 
 If the local LLM is unavailable, deterministic analysis and rule-based explanations remain available.
@@ -529,7 +632,7 @@ The model is instructed to:
 - Avoid unsupported claims of data exposure or remote code execution
 - Use source code as evidence when available
 - Distinguish potential vulnerabilities from confirmed vulnerabilities
-- Explain URL-related findings using the actual URL-handling code
+- Explain security-related findings using the actual source-code context
 - Produce concise, practical fixes
 
 This is important for security findings where a scanner may identify a potentially risky coding pattern without proving that the application is exploitable.
@@ -541,7 +644,6 @@ This is important for security findings where a scanner may identify a potential
 Planned extensions include:
 
 - C++ static-analysis support
-- Java static-analysis support
 - Additional language-specific analysis tools
 - AI-assisted refactoring workflows
 - Predictive risk modeling
@@ -551,7 +653,7 @@ Planned extensions include:
 - Developer impact analysis
 - More advanced historical analytics
 
-Multi-language support is a planned extension and is not represented as a currently supported production feature until its analysis pipeline is implemented and tested.
+Java support is now part of the implemented analysis pipeline and is no longer listed as future scope.
 
 ---
 
@@ -559,7 +661,7 @@ Multi-language support is a planned extension and is not represented as a curren
 
 This project demonstrates:
 
-- Static-analysis integration
+- Multi-language static-analysis integration
 - Local LLM integration
 - Source-code-aware AI analysis
 - Unified data modeling
@@ -570,7 +672,7 @@ This project demonstrates:
 - API-based backend architecture
 - AI safety and output validation
 - Separation of deterministic analysis and probabilistic AI reasoning
-- Scalable architecture planning
+- Language-specific analysis with a common reporting pipeline
 
 The project combines conventional software-engineering analysis with a locally hosted AI layer to create a practical code-intelligence workflow.
 
