@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 
 
 def _count_by_tool(unified_issues: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Count how many issues came from each analyzer."""
     counts: Dict[str, int] = {}
     for issue in unified_issues:
         tool = str(issue.get("tool") or "unknown").lower()
@@ -12,6 +13,7 @@ def _count_by_tool(unified_issues: List[Dict[str, Any]]) -> Dict[str, int]:
 
 
 def _count_by_severity(unified_issues: List[Dict[str, Any]]) -> Dict[str, int]:
+    """Count issues by low, medium, and high severity."""
     counts = {"low": 0, "medium": 0, "high": 0}
     for issue in unified_issues:
         severity = str(issue.get("severity") or "low").lower()
@@ -34,6 +36,7 @@ def _extract_loc(tool_outputs: List[Dict[str, Any]]) -> int:
 
 
 def _heatmap(unified_issues: List[Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
+    """Group issue counts by file and severity for the heatmap."""
     out: Dict[str, Dict[str, int]] = {}
     for issue in unified_issues:
         file_path = str(issue.get("file") or "unknown")
@@ -47,6 +50,7 @@ def _heatmap(unified_issues: List[Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
 
 
 def _top_files(heatmap: Dict[str, Dict[str, int]], limit: int = 10) -> List[Dict[str, Any]]:
+    """Return files with the highest total number of issues."""
     rows: List[Dict[str, Any]] = []
     for file_path, counts in heatmap.items():
         total = int(counts.get("low", 0)) + int(counts.get("medium", 0)) + int(counts.get("high", 0))
@@ -56,6 +60,7 @@ def _top_files(heatmap: Dict[str, Dict[str, int]], limit: int = 10) -> List[Dict
 
 
 def _top_refactor_priority(heatmap: Dict[str, Dict[str, int]], limit: int = 5) -> List[Dict[str, Any]]:
+    """Rank files by weighted severity to find refactoring priorities."""
     rows: List[Dict[str, Any]] = []
     for file_path, counts in heatmap.items():
         low = int(counts.get("low", 0))
@@ -68,6 +73,7 @@ def _top_refactor_priority(heatmap: Dict[str, Dict[str, int]], limit: int = 5) -
 
 
 def _most_recurring_issues(unified_issues: List[Dict[str, Any]], limit: int = 10) -> List[Dict[str, Any]]:
+    """Find the most frequently repeated analyzer rules."""
     counts: Dict[str, int] = {}
     for issue in unified_issues:
         tool = str(issue.get("tool") or "unknown").lower()
@@ -80,6 +86,7 @@ def _most_recurring_issues(unified_issues: List[Dict[str, Any]], limit: int = 10
 
 
 def build_metrics(tool_outputs: List[Dict[str, Any]], unified_issues: List[Dict[str, Any]] | None = None) -> Dict[str, Any]:
+    """Build the metrics used by the dashboard and scoring system."""
     unified = unified_issues or []
     loc = _extract_loc(tool_outputs)
     by_tool = _count_by_tool(unified)
