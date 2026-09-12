@@ -1,5 +1,7 @@
+# AI-Powered Code Intelligence & Review Platform
+
 ![Python](https://img.shields.io/badge/Python-3.x-blue)
-![Java](https://img.shields.io/badge/Java-17%2B-orange)
+![Java](https://img.shields.io/badge/Java-21-orange)
 ![C%2FC%2B%2B](https://img.shields.io/badge/C%2FC%2B%2B-Cppcheck-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-Backend-green)
 ![React](https://img.shields.io/badge/React-Frontend-blue)
@@ -10,198 +12,180 @@
 ![Cppcheck](https://img.shields.io/badge/Cppcheck-C%2FC%2B%2B-orange)
 ![License](https://img.shields.io/badge/License-Educational-orange)
 
-# AI-Powered Code Intelligence & Review Platform
+A full-stack code intelligence platform that combines deterministic static analysis, engineering metrics, risk scoring, historical tracking, and local AI explanations to help developers understand and improve source code.
 
-A hybrid static-analysis and local-AI code intelligence platform designed to evaluate software quality, security risk, maintainability, and refactoring priorities across supported source-code languages.
+The platform accepts source code through paste, ZIP upload, or GitHub repository input. It automatically routes supported files to the appropriate analysis tools, converts their findings into one common issue format, calculates deterministic project metrics and scores, and uses a local LLM to explain important findings using the actual source-code context.
 
-The platform combines deterministic static-analysis tools with a locally running LLM through Ollama. Static-analysis results remain authoritative for issue detection, severity, metrics, and scoring, while the AI layer explains important findings in simple English and provides practical fixes based on the actual source code.
+> **Core principle:** static-analysis tools are the source of truth for issue detection, severity, metrics, and scoring. The AI layer enriches the results with understandable explanations and practical fixes.
 
 ---
 
-## 🚀 Project Overview
+## 🚀 Current Capabilities
 
-The platform accepts source code through multiple ingestion methods, runs language-appropriate static analysis, normalizes findings into a unified issue model, calculates engineering metrics, produces a deterministic risk score, and enriches important findings using a local LLM.
+The current implementation supports:
 
-### Current workflow
+- Python analysis with **Flake8 + Bandit**
+- Java analysis with **PMD**
+- C and C++ analysis with **Cppcheck**
+- Paste-code, ZIP-upload, and GitHub-repository ingestion
+- Automatic supported-language routing
+- Unified issue normalization across analysis tools
+- Severity and category mapping
+- Lines of Code and issue-density metrics
+- Deterministic 0–100 project scoring
+- Low / Medium / High project risk levels
+- File-level issue concentration and heatmap data
+- Recurring-issue analysis
+- Historical scan storage and trend analysis
+- Local AI explanations using **Ollama + Qwen3 8B**
+- Source-code-aware AI context around reported findings
+- AI-generated project summaries and recommendations
+- Rule-based fallback explanations when the local LLM is unavailable
+- React dashboard for scan results and project health
+
+---
+
+## 🏗️ System Architecture
+
+![Architecture Diagram](docs/architecture.png)
+
+### End-to-end pipeline
 
 ```text
-Paste Code / Upload ZIP / GitHub Repository
-                    ↓
-               Code Ingestion
-                    ↓
-             Language Detection
-          /        |        |       \
-         /         |        |        \
-   Python         Java      C       C++
-     ↓              ↓       \       /
-Flake8+Bandit      PMD       \     /
-         \          |         Cppcheck
-          \         |          /
-           └────────┴─────────┘
-                    ↓
-           Issue Normalization
-                    ↓
-             Metrics Engine
-                    ↓
-          Deterministic Scoring
-                    ↓
-          AI Enrichment Layer
-             (Ollama + Qwen3)
-                    ↓
-              Scan Storage
-                    ↓
-               Dashboard
+                 SOURCE CODE INPUT
+        ┌────────────┼────────────┐
+        │            │            │
+      Paste        ZIP         GitHub
+        │            │            │
+        └────────────┼────────────┘
+                     ↓
+                INGESTION LAYER
+                     ↓
+              LANGUAGE DETECTION
+                     ↓
+       ┌─────────────┼─────────────┐
+       ↓             ↓             ↓
+    Python         Java         C / C++
+       ↓             ↓             ↓
+ Flake8+Bandit      PMD        Cppcheck
+       └─────────────┼─────────────┘
+                     ↓
+             ISSUE NORMALIZATION
+                     ↓
+               METRICS ENGINE
+                     ↓
+          DETERMINISTIC SCORING
+                     ↓
+             FINDING PRIORITIZATION
+                     ↓
+             SOURCE CONTEXT READ
+                     ↓
+          LOCAL AI ENRICHMENT
+              Ollama + Qwen3
+                     ↓
+            SCAN + HISTORY STORAGE
+                     ↓
+                REACT DASHBOARD
 ```
 
-The AI layer is an enrichment layer rather than the source of truth. If the local LLM is unavailable, deterministic analysis and rule-based explanations remain available.
+The pipeline is deliberately separated into deterministic analysis and AI enrichment. This prevents the LLM from changing scanner findings, severity, project metrics, or the calculated score.
 
 ---
 
-## 🧠 Local AI Code Review
+## 🔎 Multi-Language Static Analysis
 
-The project includes a fully local AI review pipeline using **Ollama** and **Qwen3 8B**.
+### Python — Flake8 + Bandit
 
-### Why local AI?
+**Flake8** analyzes Python code quality and style, including linting violations, unused imports, formatting problems, and other maintainability issues.
 
-- Source code does not need to be sent to a cloud LLM provider for the review step.
-- The model runs locally on the developer's machine.
-- No OpenAI API key is required for the current AI implementation.
-- The deterministic analysis pipeline remains independent of the LLM.
+**Bandit** analyzes Python code for security-sensitive coding patterns and potentially unsafe operations.
 
-### AI runtime
+### Java — PMD
 
-- Runtime: Ollama
-- Default model: `qwen3:8b`
-- Default endpoint: `http://localhost:11434/api/generate`
-- JSON-formatted model responses
-- Low-temperature generation for more consistent explanations
-- Python standard-library HTTP client; no OpenAI SDK is required
+**PMD** performs static analysis on Java source code using Java quality and security rules.
 
-### Source-code-aware explanations
+PMD priority is normalized into the platform's severity model:
 
-For important findings, the backend reads a small source-code window around the reported line and sends that context to the local model.
+| PMD Priority | Platform Severity |
+|---:|---|
+| 1–2 | High |
+| 3 | Medium |
+| 4–5 | Low |
 
-The context contains approximately five lines before and five lines after the finding, with the flagged line marked for clarity. The path is resolved safely inside the scan input directory before the source file is read.
+### C / C++ — Cppcheck
 
-This works for supported source files, including Java findings produced by PMD and C/C++ findings produced by Cppcheck.
+**Cppcheck** performs static analysis on C and C++ source code and reports potential bugs, warnings, style problems, performance concerns, portability issues, and security-related findings when applicable.
 
-### AI issue output
+Supported extensions:
 
-For selected findings, the AI produces:
+- C: `.c`, `.h`
+- C++: `.cc`, `.cpp`, `.cxx`, `.hh`, `.hpp`, `.hxx`
 
-- **Explanation** — what the code is doing and why it was flagged
-- **Fix** — a practical fix for the specific code
-- **Risk** — the realistic potential risk
-- **Impact** — the realistic consequence if the issue causes a problem
-
-The AI is instructed to:
-
-- Treat scanner severity as authoritative
-- Never increase the supplied severity
-- Avoid inventing attacker capabilities or attack scenarios
-- Distinguish potential risks from confirmed vulnerabilities
-- Use supplied source code as the primary evidence
-- Avoid describing low/medium findings as high/critical
-- Give code-specific rather than generic fixes
+Cppcheck XML output is converted into the platform's common issue structure. Informational metadata produced by Cppcheck, such as checker-report information, is excluded from source-code issue counts and scoring.
 
 ---
 
 ## 🧩 Unified Issue Model
 
-Static-analysis findings are normalized into a common structure so different tools can be displayed and processed consistently.
+Different static-analysis tools produce different output formats. The normalization layer converts them into a common structure so the rest of the platform can process findings consistently.
+
+Conceptually, a normalized issue contains:
 
 ```text
-UnifiedIssue {
-    tool,
-    rule_id,
-    severity,
-    confidence,
-    file,
-    line,
-    message,
-    category
-}
+UnifiedIssue
+├── tool
+├── rule_id
+├── severity
+├── confidence
+├── file
+├── line
+├── message
+└── category
 ```
 
-Current severity levels:
+Additional tool-specific information can be retained when useful, such as PMD priority/ruleset or Cppcheck CWE information.
 
-- Low
-- Medium
-- High
+### Why normalization matters
 
----
-
-## 🔎 Static Analysis
-
-The project currently supports language-specific static analysis.
-
-### Python
-
-#### Flake8
-
-Used for Python code-quality and style findings such as formatting, unused imports, unused variables, syntax problems, and other linting violations.
-
-#### Bandit
-
-Used for Python security-oriented static analysis, including potentially unsafe operations and security-sensitive coding patterns.
-
-### Java
-
-#### PMD
-
-PMD is used for Java static analysis. PMD findings are converted into the platform's unified issue model before metrics, scoring, and AI enrichment.
-
-PMD priority is mapped into the platform severity model:
-
-- PMD priority 1–2 → High
-- PMD priority 3 → Medium
-- PMD priority 4–5 → Low
-
-### C and C++
-
-#### Cppcheck
-
-Cppcheck is used for C and C++ static analysis. The integration supports common C/C++ source and header extensions and converts Cppcheck findings into the same unified issue model used by the other scanners.
-
-The runner requests XML output from Cppcheck and retains useful information such as rule ID, severity, message, file, line, and CWE when available.
-
-The supported source extensions include:
-
-- C: `.c`, `.h`
-- C++: `.cc`, `.cpp`, `.cxx`, `.hh`, `.hpp`, `.hxx`
+Without normalization, every dashboard, metrics, scoring, and AI component would need separate logic for each scanner. The unified model provides one common interface for all supported languages.
 
 ---
 
-## 📊 Advanced Metrics
+## 📊 Engineering Metrics
 
-The platform calculates and displays engineering metrics including:
+The metrics layer calculates project-level and file-level information independently of the AI layer.
+
+Current metrics include:
 
 - Total issues
 - Severity breakdown
-- Issues by tool
+- Issues by analysis tool
 - Lines of Code (LOC)
 - Issue density
+- File-level issue concentration
 - Top refactor-priority files
-- File-wise severity heatmap
-- Most recurring issues
-- Historical scan trends
+- Severity heatmap data
+- Recurring issues
 - Penalty breakdown
+- Historical scan trends
 
-LOC is calculated from the active supported-language analysis output.
-
-These metrics are generated independently of the AI layer.
+LOC is calculated from the active supported-language analysis output rather than from the AI layer.
 
 ---
 
-## 🎯 Density-Based Scoring Engine
+## 🎯 Deterministic Risk Scoring
 
-The scoring engine evaluates project health using issue severity and issue density.
+The scoring engine calculates a project score from static-analysis results and engineering metrics.
 
-The calculation considers severity weights, issue density per KLOC, penalty scaling, and a final score clamped to 0–100.
+The score is deterministic and independent of the LLM.
+
+Conceptually:
 
 ```text
 final_score = clamp(100 - penalty, 0, 100)
 ```
+
+The scoring process considers factors such as issue severity and issue density, then produces a score from 0 to 100.
 
 ### Risk levels
 
@@ -211,95 +195,237 @@ final_score = clamp(100 - penalty, 0, 100)
 | 50–79 | Medium Risk |
 | 0–49 | High Risk |
 
-The AI never replaces this calculation.
+The AI does **not** recalculate or override this score.
 
 ---
 
-## 🖥 Dashboard
+## 🧠 Local AI Code Review
 
-The React dashboard provides an interactive interface for creating and reviewing scans.
+The platform includes a local AI enrichment layer powered by:
 
-### Scan input modes
+- **Ollama** — local LLM runtime
+- **Qwen3 8B** — default local model
 
-- **Paste Code** — analyze source code entered directly in the dashboard
-- **Upload ZIP** — analyze an uploaded project archive containing supported source files
-- **Repository** — analyze a GitHub repository containing supported source files
+The current implementation communicates with Ollama using Python's standard-library HTTP client, so an OpenAI SDK or OpenAI API key is not required for the current AI path.
 
-### Currently supported source languages
+### AI workflow
 
-- Python (`.py`)
-- Java (`.java`)
-- C (`.c`, `.h`)
-- C++ (`.cc`, `.cpp`, `.cxx`, `.hh`, `.hpp`, `.hxx`)
+```text
+Static-analysis finding
+          ↓
+Select important findings
+          ↓
+Read source-code context
+          ↓
+Send finding + context to Ollama
+          ↓
+Qwen3 8B generates structured response
+          ↓
+Validate/use explanation
+          ↓
+Display in dashboard
+```
 
-### Dashboard capabilities
+### Source-code-aware context
 
-- Create and monitor scans
-- Display project score and risk level
-- Show total issues and LOC
-- Show severity distribution
-- Show issues by analysis tool
-- Show top risky findings
-- Show AI explanations and fixes
-- Show security and quality summaries
-- Show priority actions and recommendations
-- View recurring issues
-- View file-level heatmap data
-- View historical scan records
-- View project trend charts
-- Inspect raw scan information
-- Copy issue information for further use
+For important findings, the backend reads a small window around the reported source line. The target line is marked clearly, and the source path is resolved inside the scan input directory before reading.
+
+This allows the model to explain the actual code instead of relying only on a scanner message.
+
+### AI output
+
+For selected findings, the model generates:
+
+- **Explanation** — what the code is doing and why it was flagged
+- **Fix** — a practical code-specific improvement
+- **Risk** — the realistic potential risk
+- **Impact** — the realistic consequence
+
+The project summary can also include:
+
+- Overall project assessment
+- Priority action
+- Score explanation
+- Security overview
+- Quality overview
+- Recommendations
+
+### AI safety and consistency rules
+
+The AI layer is instructed to:
+
+- Treat scanner severity as authoritative
+- Never increase the supplied severity
+- Avoid inventing attacker capabilities
+- Avoid inventing unsupported attack scenarios
+- Distinguish potential issues from confirmed vulnerabilities
+- Use source code as the primary evidence for explanations
+- Avoid describing low/medium findings as high/critical
+- Provide specific fixes rather than generic advice
+- Keep security claims tied to actual security evidence
+
+If the local LLM is unavailable, the platform can continue using deterministic analysis and rule-based explanations.
 
 ---
 
-## 🏗 Architecture
+## 🖥️ Dashboard
 
-![Architecture Diagram](docs/architecture.png)
+The frontend provides an interactive interface for creating scans and reviewing project health.
 
-### Major backend layers
+### Input methods
+
+#### Paste Code
+
+Paste source code directly into the application and scan it.
+
+#### Upload ZIP
+
+Upload a project archive containing supported source files.
+
+#### GitHub Repository
+
+Provide a GitHub repository for ingestion and analysis.
+
+### Dashboard features
+
+- Scan creation and monitoring
+- Project score
+- Risk level
+- Total issues
+- Lines of Code
+- Severity distribution
+- Issues by analysis tool
+- Top risky findings
+- AI explanations
+- AI fixes and impact descriptions
+- Security and quality summaries
+- Priority actions
+- Recommendations
+- File-level issue information
+- Heatmap information
+- Recurring issues
+- Historical scan records
+- Project trend charts
+- Raw scan information
+
+---
+
+## 🔄 Scan Lifecycle
+
+```text
+1. Create scan
+2. Receive source code
+3. Ingest files
+4. Detect supported languages
+5. Route files to analysis tools
+6. Run static analysis
+7. Normalize findings
+8. Calculate metrics
+9. Calculate deterministic score
+10. Prioritize important findings
+11. Read source-code context
+12. Generate local AI explanations
+13. Generate project summary
+14. Store scan results
+15. Update history
+16. Display results in dashboard
+```
+
+### Language routing
+
+```text
+.py
+ ↓
+Flake8 + Bandit
+
+.java
+ ↓
+PMD
+
+.c / .h
+ ↓
+Cppcheck
+
+.cc / .cpp / .cxx / .hh / .hpp / .hxx
+ ↓
+Cppcheck
+```
+
+All normalized findings then follow the same downstream path:
+
+```text
+Unified Issues
+      ↓
+   Metrics
+      ↓
+   Scoring
+      ↓
+AI Enrichment
+      ↓
+ Dashboard
+```
+
+---
+
+## 🏛️ Backend Architecture
 
 ```text
 backend/app/
-├─ api/
-│  └─ routes/
-├─ services/
-│  ├─ ai/
-│  ├─ history/
-│  ├─ ingestion/
-│  ├─ pipeline/
-│  ├─ processors/
-│  ├─ runners/
-│  └─ scoring/
-└─ main.py
+├── api/
+│   └── routes/
+│       ├── scans.py
+│       └── multi_language_scans.py
+│
+├── services/
+│   ├── ai/
+│   │   ├── generator.py
+│   │   ├── llm_generator.py
+│   │   ├── rules.py
+│   │   └── history/
+│   │
+│   ├── history/
+│   ├── ingestion/
+│   ├── pipeline/
+│   │   └── simple_pipeline.py
+│   ├── processors/
+│   │   ├── normalize.py
+│   │   ├── normalize_pmd.py
+│   │   ├── normalize_cppcheck.py
+│   │   └── metrics.py
+│   ├── runners/
+│   │   ├── flake8_runner.py
+│   │   ├── bandit_runner.py
+│   │   ├── pmd_runner.py
+│   │   ├── cppcheck_runner.py
+│   │   └── runner_utils.py
+│   └── scoring/
+│
+└── main.py
 ```
 
-### Language analysis services
+### Important components
 
-```text
-backend/app/services/runners/
-├─ flake8_runner.py
-├─ bandit_runner.py
-├─ pmd_runner.py
-├─ cppcheck_runner.py
-└─ runner_utils.py
-```
-
-```text
-backend/app/services/processors/
-├─ normalize.py
-├─ normalize_pmd.py
-├─ normalize_cppcheck.py
-└─ metrics.py
-```
-
-- `pmd_runner.py` executes PMD for Java source analysis.
-- `cppcheck_runner.py` executes Cppcheck for C/C++ source analysis.
-- `normalize_pmd.py` converts PMD findings into the unified issue model.
-- `normalize_cppcheck.py` converts Cppcheck findings into the unified issue model.
+| Component | Purpose |
+|---|---|
+| `multi_language_scans.py` | Handles multi-language scan inputs and routes supported files |
+| `simple_pipeline.py` | Coordinates the complete analysis pipeline |
+| `flake8_runner.py` | Runs Flake8 for Python quality analysis |
+| `bandit_runner.py` | Runs Bandit for Python security analysis |
+| `pmd_runner.py` | Runs PMD for Java analysis |
+| `cppcheck_runner.py` | Runs Cppcheck for C/C++ analysis |
+| `normalize.py` | Normalizes Flake8/Bandit findings and builds unified issues |
+| `normalize_pmd.py` | Converts PMD findings into the unified issue model |
+| `normalize_cppcheck.py` | Converts Cppcheck findings into the unified issue model |
+| `metrics.py` | Calculates project engineering metrics |
+| `scoring/` | Calculates deterministic project risk score |
+| `generator.py` | Coordinates AI enrichment and project AI output |
+| `llm_generator.py` | Communicates with the local Ollama model |
+| `rules.py` | Provides rule-based explanation fallback |
+| `history/` | Stores and retrieves historical scan information |
 
 ---
 
-## 🛠 Tech Stack
+## 🧰 Technology Stack
 
 ### Backend
 
@@ -309,8 +435,7 @@ backend/app/services/processors/
 - Bandit
 - PMD
 - Cppcheck
-- Java
-- C/C++ analysis support
+- Java 21
 - Ollama
 - Qwen3 8B
 
@@ -324,9 +449,9 @@ backend/app/services/processors/
 
 ### Storage
 
-- Local filesystem storage
-- JSON scan results
-- JSONL historical trend data
+- Local filesystem
+- JSON scan artifacts
+- JSONL historical data
 
 ---
 
@@ -334,80 +459,110 @@ backend/app/services/processors/
 
 ```text
 ai-code-intelligence-platform/
-├─ backend/
-│  ├─ app/
-│  │  ├─ api/
-│  │  │  └─ routes/
-│  │  │     ├─ scans.py
-│  │  │     └─ multi_language_scans.py
-│  │  ├─ services/
-│  │  │  ├─ ai/
-│  │  │  ├─ history/
-│  │  │  ├─ ingestion/
-│  │  │  ├─ pipeline/
-│  │  │  ├─ processors/
-│  │  │  │  ├─ normalize.py
-│  │  │  │  ├─ normalize_pmd.py
-│  │  │  │  ├─ normalize_cppcheck.py
-│  │  │  │  └─ metrics.py
-│  │  │  ├─ runners/
-│  │  │  │  ├─ bandit_runner.py
-│  │  │  │  ├─ flake8_runner.py
-│  │  │  │  ├─ pmd_runner.py
-│  │  │  │  ├─ cppcheck_runner.py
-│  │  │  │  └─ runner_utils.py
-│  │  │  └─ scoring/
-│  │  └─ main.py
-│  └─ storage/
 │
-├─ frontend/
-│  ├─ src/
-│  │  ├─ api/
-│  │  ├─ components/
-│  │  ├─ hooks/
-│  │  ├─ pages/
-│  │  ├─ types/
-│  │  ├─ App.tsx
-│  │  └─ main.tsx
-│  └─ public/
+├── backend/
+│   ├── app/
+│   │   ├── api/
+│   │   │   └── routes/
+│   │   ├── services/
+│   │   │   ├── ai/
+│   │   │   ├── history/
+│   │   │   ├── ingestion/
+│   │   │   ├── pipeline/
+│   │   │   ├── processors/
+│   │   │   ├── runners/
+│   │   │   └── scoring/
+│   │   └── main.py
+│   │
+│   └── storage/
 │
-└─ docs/
-   ├─ architecture.png
-   └─ dashboard.png
+├── frontend/
+│   ├── src/
+│   │   ├── api/
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   ├── pages/
+│   │   ├── types/
+│   │   ├── App.tsx
+│   │   └── main.tsx
+│   └── public/
+│
+└── docs/
+    ├── architecture.png
+    └── dashboard.png
 ```
 
 ---
 
-## ⚙️ How to Run
+## ⚙️ Installation & Setup
 
-### Java and PMD
-
-Java source analysis requires a Java runtime/JDK and PMD on the system PATH.
+### 1. Clone the repository
 
 ```bash
-java -version
-pmd --version
+git clone https://github.com/Manojmanu696/ai-code-intelligence-platform.git
+cd ai-code-intelligence-platform
 ```
 
-### C and C++
-
-C/C++ source analysis requires Cppcheck on the system PATH.
-
-```bash
-cppcheck --version
-```
-
-### Backend
+### 2. Backend environment
 
 ```bash
 cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
+### 3. Java and PMD
+
+Java analysis requires a JDK and PMD available on the system PATH.
+
+```bash
+java -version
+javac -version
+pmd --version
+```
+
+The project is currently configured/documented around Java 21 and PMD 7.x.
+
+### 4. C/C++ analysis
+
+Cppcheck must be available on the system PATH.
+
+```bash
+cppcheck --version
+```
+
+### 5. Local AI
+
+Install and run Ollama, then make sure the configured model is available:
+
+```bash
+ollama list
+```
+
+The default project model is:
+
+```text
+qwen3:8b
+```
+
+The local Ollama endpoint used by the application is:
+
+```text
+http://localhost:11434/api/generate
+```
+
+### 6. Start the backend
+
+From the `backend` directory:
+
+```bash
 uvicorn app.main:app --reload
 ```
 
-### Frontend
+### 7. Start the frontend
+
+Open another terminal:
 
 ```bash
 cd frontend
@@ -417,86 +572,130 @@ npm run dev
 
 ---
 
-## 🧪 Scan Workflow
+## 🧪 Example Analysis Flow
+
+A project containing multiple languages can be analyzed through the same platform:
 
 ```text
-1. Create Scan
-2. Paste Code / Upload ZIP / Enter Repository
-3. Ingest Supported Source Code
-4. Run Language-Specific Static Analysis
-5. Normalize Issues
-6. Generate Engineering Metrics
-7. Compute Deterministic Score
-8. Rank Important Findings
-9. Read Source-Code Context
-10. Generate Local AI Explanations
-11. Generate AI Project Summary
-12. Store Scan and History
-13. Render Dashboard
+project/
+├── app.py
+├── security.py
+├── Main.java
+├── service.c
+└── engine.cpp
 ```
 
-Current language routing:
+The platform routes the files as follows:
 
 ```text
-Python (.py)
-   ↓
-Flake8 + Bandit
+app.py / security.py
+        ↓
+  Flake8 + Bandit
 
-Java (.java)
-   ↓
-PMD
+Main.java
+    ↓
+   PMD
 
-C (.c/.h)
-   ↓
-Cppcheck
-
-C++ (.cc/.cpp/.cxx/.hh/.hpp/.hxx)
-   ↓
-Cppcheck
-
-All supported languages
- ↓
-Unified Issues
- ↓
-Metrics
- ↓
-Scoring
- ↓
-AI Enrichment
- ↓
-Dashboard
+service.c / engine.cpp
+        ↓
+    Cppcheck
 ```
+
+The findings are then merged into one common result set for metrics, scoring, prioritization, and dashboard display.
+
+---
+
+## 🔐 Design Principles
+
+### Deterministic analysis first
+
+Static-analysis tools provide the authoritative findings. The AI does not replace them.
+
+### AI as an explanation layer
+
+The LLM makes findings easier to understand and provides code-specific remediation suggestions.
+
+### Source-code evidence
+
+Important AI explanations use actual source-code context around the reported line.
+
+### Multi-language consistency
+
+Different scanners are converted into one common issue model so downstream components work consistently across languages.
+
+### Local processing
+
+The current AI implementation runs the LLM locally through Ollama rather than requiring a cloud LLM API.
+
+### Graceful fallback
 
 If the local LLM is unavailable, deterministic analysis and rule-based explanations remain available.
 
 ---
 
+## 📌 What Makes the Project Different
+
+The platform is not only a linting dashboard. It combines several stages into one workflow:
+
+```text
+Static Analysis
+      +
+Unified Issue Model
+      +
+Engineering Metrics
+      +
+Deterministic Risk Scoring
+      +
+Source-Code-Aware Local AI
+      +
+Historical Tracking
+      +
+Interactive Dashboard
+```
+
+This provides both **machine-detected evidence** and **human-readable explanations** in a single system.
+
+---
+
 ## 🔮 Future Enhancements
 
-Planned extensions include:
+Possible future extensions include:
 
-- Additional language-specific analysis tools
+- Additional programming languages
+- More language-specific security scanners
 - AI-assisted refactoring workflows
-- Predictive risk modeling
 - Pull-request review integration
 - CI/CD integration
 - GitHub Actions integration
 - Developer impact analysis
 - More advanced historical analytics
+- Automated remediation suggestions
 
-Java and C/C++ support are now part of the implemented analysis pipeline and are no longer listed as future scope.
+Java and C/C++ analysis are already implemented and are therefore not listed as future language support.
 
 ---
 
-## 🎓 Academic Relevance
+## 🎓 Academic / Final-Year Project Relevance
 
-This project demonstrates:
+This project demonstrates practical integration of:
 
-- Multi-language static-analysis integration
-- Unified issue normalization
-- Deterministic software-quality scoring
-- Local LLM integration
-- Source-code-aware AI explanations
+- Full-stack web development
+- REST API design
+- Static code analysis
 - Software security analysis
-- Engineering metrics and historical trends
-- Full-stack application development
+- Multi-language processing
+- Data normalization
+- Engineering metrics
+- Deterministic scoring
+- Local LLM integration
+- Source-code-aware AI processing
+- Historical data analysis
+- Interactive data visualization
+
+The architecture also demonstrates separation of concerns between **analysis**, **normalization**, **metrics**, **scoring**, **AI enrichment**, **storage**, and **presentation**.
+
+---
+
+## 📜 License
+
+This project is intended for educational and academic use.
