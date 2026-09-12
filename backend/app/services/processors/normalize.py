@@ -104,9 +104,10 @@ def build_unified_issues(
     flake8_norm: Dict[str, Any],
     bandit_norm: Dict[str, Any],
     pmd_norm: Dict[str, Any] | None = None,
+    cppcheck_norm: Dict[str, Any] | None = None,
 ) -> List[Dict[str, Any]]:
     unified: List[Dict[str, Any]] = []
-    for normalized in (flake8_norm, bandit_norm, pmd_norm or {}):
+    for normalized in (flake8_norm, bandit_norm, pmd_norm or {}, cppcheck_norm or {}):
         for issue in normalized.get("issues", []):
             if isinstance(issue, dict):
                 unified.append(issue)
