@@ -22,14 +22,15 @@ def _count_by_severity(unified_issues: List[Dict[str, Any]]) -> Dict[str, int]:
 
 
 def _extract_loc(tool_outputs: List[Dict[str, Any]]) -> int:
-    loc_values: List[int] = []
+    """Sum LOC reported by independent language analyzers."""
+    total = 0
     for item in tool_outputs:
         if not isinstance(item, dict):
             continue
         loc = item.get("loc")
         if isinstance(loc, int) and loc >= 0:
-            loc_values.append(loc)
-    return max(loc_values, default=0)
+            total += loc
+    return total
 
 
 def _heatmap(unified_issues: List[Dict[str, Any]]) -> Dict[str, Dict[str, int]]:
