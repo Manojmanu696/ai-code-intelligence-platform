@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 
 
 def _map_flake8_category(code: str) -> str:
+    """Map a Flake8 rule code to a project issue category."""
     if not code:
         return "style"
     if code.startswith("F"):
@@ -19,6 +20,7 @@ def _map_flake8_category(code: str) -> str:
 
 
 def _map_flake8_severity(code: str) -> str:
+    """Map a Flake8 rule code to a project severity level."""
     if not code:
         return "low"
     high_codes = {"E999", "F821", "F823", "F831", "F706", "F704"}
@@ -35,6 +37,7 @@ def _map_flake8_severity(code: str) -> str:
 
 
 def normalize_flake8(raw: Any) -> Dict[str, Any]:
+    """Convert Flake8 results into the project's common issue format."""
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
@@ -65,6 +68,7 @@ def normalize_flake8(raw: Any) -> Dict[str, Any]:
 
 
 def normalize_bandit(raw: Any) -> Dict[str, Any]:
+    """Convert Bandit security results into the common issue format."""
     if isinstance(raw, str):
         try:
             raw = json.loads(raw)
@@ -106,6 +110,7 @@ def build_unified_issues(
     pmd_norm: Dict[str, Any] | None = None,
     cppcheck_norm: Dict[str, Any] | None = None,
 ) -> List[Dict[str, Any]]:
+    """Combine findings from all analyzers into one issue list."""
     unified: List[Dict[str, Any]] = []
     for normalized in (flake8_norm, bandit_norm, pmd_norm or {}, cppcheck_norm or {}):
         for issue in normalized.get("issues", []):
