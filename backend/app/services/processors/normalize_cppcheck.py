@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 
 
 def _map_severity(value: Any) -> str:
+    """Convert Cppcheck severity into the project's severity level."""
     text = str(value or "style").strip().lower()
     if text in {"error", "warning"}:
         return "high" if text == "error" else "medium"
@@ -13,6 +14,7 @@ def _map_severity(value: Any) -> str:
 
 
 def _category(value: Any) -> str:
+    """Convert a Cppcheck finding type into a project category."""
     text = str(value or "").strip().lower()
     if text == "error":
         return "bug_risk"
@@ -26,6 +28,7 @@ def _category(value: Any) -> str:
 
 
 def normalize_cppcheck(raw: Any) -> Dict[str, Any]:
+    """Convert the Cppcheck report into the project's common issue format."""
     files = raw.get("files", []) if isinstance(raw, dict) else []
     issues: List[Dict[str, Any]] = []
     if not isinstance(files, list):
