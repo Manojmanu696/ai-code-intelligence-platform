@@ -12,6 +12,7 @@ SOURCE_EXTENSIONS = {".c", ".cc", ".cpp", ".cxx"}
 
 
 def _source_loc(input_dir: Path) -> int:
+    """Count lines in C and C++ source files."""
     total = 0
     for path in input_dir.rglob("*"):
         if path.is_file() and path.suffix.lower() in SOURCE_EXTENSIONS:
@@ -23,10 +24,12 @@ def _source_loc(input_dir: Path) -> int:
 
 
 def _empty_report(loc: int = 0) -> Dict[str, Any]:
+    """Create an empty Cppcheck report when no findings are available."""
     return {"cppcheckVersion": None, "files": [], "loc": loc}
 
 
 def _parse_xml(xml_text: str, loc: int) -> Dict[str, Any]:
+    """Convert Cppcheck XML output into a simple dictionary."""
     root = ET.fromstring(xml_text)
     version = root.attrib.get("version")
     files: Dict[str, List[Dict[str, Any]]] = {}
