@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 
 
 def _map_priority_to_severity(priority: Any) -> str:
+    """Convert PMD priority numbers into project severity levels."""
     try:
         value = int(priority)
     except (TypeError, ValueError):
@@ -17,6 +18,7 @@ def _map_priority_to_severity(priority: Any) -> str:
 
 
 def _category_from_ruleset(ruleset: Any) -> str:
+    """Convert a PMD ruleset name into a project issue category."""
     text = str(ruleset or "").strip().lower()
     if "security" in text:
         return "security"
@@ -32,6 +34,7 @@ def _category_from_ruleset(ruleset: Any) -> str:
 
 
 def normalize_pmd(raw: Any) -> Dict[str, Any]:
+    """Convert the PMD report into the project's common issue format."""
     files = raw.get("files", []) if isinstance(raw, dict) else []
     issues: List[Dict[str, Any]] = []
 
