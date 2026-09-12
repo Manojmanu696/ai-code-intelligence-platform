@@ -7,6 +7,7 @@ from app.services.runners.runner_utils import run_command, write_json
 
 
 def _java_loc(input_dir: Path) -> int:
+    """Count the lines in all Java source files."""
     total = 0
     for path in input_dir.rglob("*.java"):
         try:
