@@ -7,9 +7,11 @@ from typing import Any, Dict, Optional
 from app.services.runners.bandit_runner import run_bandit
 from app.services.runners.flake8_runner import run_flake8
 from app.services.runners.pmd_runner import run_pmd
+from app.services.runners.cppcheck_runner import run_cppcheck
 from app.services.runners.runner_utils import write_json
 from app.services.processors.normalize import normalize_flake8, normalize_bandit, build_unified_issues
 from app.services.processors.normalize_pmd import normalize_pmd
+from app.services.processors.normalize_cppcheck import normalize_cppcheck
 from app.services.processors.metrics import build_metrics
 from app.services.scoring.scoring import compute_score
 from app.services.history.trend import append_trend_point
@@ -49,18 +51,20 @@ def postprocess_scan(scan_path: Path) -> Dict[str, Any]:
     flake8_norm = normalize_flake8(_read_json(raw_dir / "flake8.json") or {})
     bandit_norm = normalize_bandit(_read_json(raw_dir / "bandit.json") or {})
     pmd_norm = normalize_pmd(_read_json(raw_dir / "pmd.json") or {})
+    cppcheck_norm = normalize_cppcheck(_read_json(raw_dir / "cppcheck.json") or {})
 
     _write_json(norm_dir / "flake8.normalized.json", flake8_norm)
     _write_json(norm_dir / "bandit.normalized.json", bandit_norm)
     _write_json(norm_dir / "pmd.normalized.json", pmd_norm)
+    _write_json(norm_dir / "cppcheck.normalized.json", cppcheck_norm)
 
-    unified = build_unified_issues(flake8_norm, bandit_norm, pmd_norm)
+    unified = build_unified_issues(flake8_norm, bandit_norm, pmd_norm, cppcheck_norm)
     for item in unified:
         if isinstance(item, dict) and item.get("file"):
             item["file"] = _to_scan_rel_path(str(item["file"]), scan_path)
     _write_json(norm_dir / "unified_issues.json", unified)
 
-    metrics = build_metrics([flake8_norm, bandit_norm, pmd_norm], unified_issues=unified)
+    metrics = build_metrics([flake8_norm, bandit_norm, pmd_norm, cppcheck_norm], unified_issues=unified)
     _write_json(metrics_dir / "metrics.json", metrics)
 
     score = compute_score(metrics)
@@ -77,6 +81,7 @@ def postprocess_scan(scan_path: Path) -> Dict[str, Any]:
             str(norm_dir / "flake8.normalized.json"),
             str(norm_dir / "bandit.normalized.json"),
             str(norm_dir / "pmd.normalized.json"),
+            str(norm_dir / "cppcheck.normalized.json"),
             str(norm_dir / "unified_issues.json"),
         ],
         "metrics_file": str(metrics_dir / "metrics.json"),
@@ -100,6 +105,7 @@ def run_tools_for_scan(scan_path: Path) -> Dict[str, Any]:
     run_flake8(input_dir=input_dir, out_json=raw_dir / "flake8.json", warnings_json=warnings_file)
     run_bandit(input_dir=input_dir, out_json=raw_dir / "bandit.json", warnings_json=warnings_file)
     run_pmd(input_dir=input_dir, out_json=raw_dir / "pmd.json", warnings_json=warnings_file)
+    run_cppcheck(input_dir=input_dir, out_json=raw_dir / "cppcheck.json", warnings_json=warnings_file)
     write_json(raw_dir / "runner_done.json", {"status": "DONE"})
 
     try:
