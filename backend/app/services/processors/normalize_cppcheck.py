@@ -7,7 +7,7 @@ def _map_severity(value: Any) -> str:
     text = str(value or "style").strip().lower()
     if text in {"error", "warning"}:
         return "high" if text == "error" else "medium"
-    if text in {"performance", "portability", "style", "information"}:
+    if text in {"performance", "portability", "style"}:
         return "low"
     return "low"
 
@@ -38,15 +38,29 @@ def normalize_cppcheck(raw: Any) -> Dict[str, Any]:
         for item in file_item.get("issues", []) if isinstance(file_item.get("issues"), list) else []:
             if not isinstance(item, dict):
                 continue
-            severity_raw = item.get("severity")
+
+            severity_raw = str(item.get("severity") or "").strip().lower()
+            file_path = item.get("file") or filename
+            line = item.get("line")
+
+            # Cppcheck also emits informational metadata such as
+            # checkersReport and unmatchedSuppression. These are not
+            # findings in the user's source code and must not affect
+            # issue counts, scoring, heatmaps, or AI analysis.
+            if severity_raw == "information":
+                continue
+
+            if not file_path or not line:
+                continue
+
             issues.append({
                 "tool": "cppcheck",
                 "rule_id": item.get("id") or "CPPCHECK",
                 "category": _category(severity_raw),
                 "severity": _map_severity(severity_raw),
                 "confidence": None,
-                "file": item.get("file") or filename,
-                "line": item.get("line"),
+                "file": file_path,
+                "line": line,
                 "message": item.get("message") or item.get("verbose"),
                 "cppcheck_severity": severity_raw,
                 "cwe": item.get("cwe"),
