@@ -4,6 +4,12 @@ import math
 from typing import Any, Dict
 
 
+# A density score becomes unstable for tiny files: one finding in 6 LOC
+# would otherwise look like 166 findings per KLOC.  We therefore use a
+# minimum scoring baseline while still reporting the real LOC separately.
+MIN_EFFECTIVE_LOC = 200
+
+
 def clamp(x: float, lo: float = 0.0, hi: float = 100.0) -> float:
     return max(lo, min(hi, x))
 
@@ -47,13 +53,19 @@ def _risk_level_from_score(final_score: float) -> str:
 
 def compute_score(metrics: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Best MVP scoring (density + log diminishing returns):
-    1) Normalize issue counts by LOC (issues per KLOC)
-    2) Apply log1p() so many low issues do not destroy the score
-    3) Medium/high severity hurt much more than low
-    4) Clamp final_score into [0, 100]
+    Density-based project health score (0-100).
 
-    Output keeps existing keys and adds a stable risk label.
+    The score uses issue density per KLOC with logarithmic diminishing
+    returns. A minimum effective LOC is used so very small files do not
+    receive an extreme penalty simply because their denominator is tiny.
+
+    Severity weights:
+      low    = 6
+      medium = 14
+      high   = 45
+
+    The deterministic score is independent of the LLM; AI is used only
+    later for explanation, remediation and contextual analysis.
     """
     totals = metrics.get("totals", {}) if isinstance(metrics, dict) else {}
     sev = totals.get("by_severity", {}) if isinstance(totals, dict) else {}
@@ -62,19 +74,21 @@ def compute_score(metrics: Dict[str, Any]) -> Dict[str, Any]:
     medium = _safe_int(sev.get("medium", 0))
     high = _safe_int(sev.get("high", 0))
 
-    loc = max(1, _get_loc(metrics))
+    raw_loc = max(1, _get_loc(metrics))
+    effective_loc = max(raw_loc, MIN_EFFECTIVE_LOC)
 
-    # densities (per 1000 LOC)
-    d_low = (low / loc) * 1000.0
-    d_med = (medium / loc) * 1000.0
-    d_high = (high / loc) * 1000.0
+    # Densities (issues per 1000 effective LOC).
+    d_low = (low / effective_loc) * 1000.0
+    d_med = (medium / effective_loc) * 1000.0
+    d_high = (high / effective_loc) * 1000.0
 
-    # tuned multipliers (balanced profile)
+    # Severity multipliers.
     A_LOW = 6.0
     A_MED = 14.0
     A_HIGH = 45.0
 
-    # diminishing returns penalty
+    # Logarithmic diminishing returns prevents large issue counts from
+    # overwhelming the score while preserving the importance of severity.
     p_low = A_LOW * math.log1p(d_low)
     p_med = A_MED * math.log1p(d_med)
     p_high = A_HIGH * math.log1p(d_high)
@@ -100,8 +114,10 @@ def compute_score(metrics: Dict[str, Any]) -> Dict[str, Any]:
             "medium": medium,
             "high": high,
         },
-        "method": "density_log_v1",
-        "loc": loc,
+        "method": "density_log_v2_small_project_normalized",
+        "loc": raw_loc,
+        "effective_loc": effective_loc,
+        "normalization_floor_loc": MIN_EFFECTIVE_LOC,
         "density_per_kloc": {
             "low": round(d_low, 2),
             "medium": round(d_med, 2),
