@@ -36,21 +36,25 @@ class GitHubPayload(BaseModel):
 
 
 def _write_json(path: Path, data: Any) -> None:
+    """Write JSON data to a file and create its parent folder first."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def _read_json(path: Path) -> Optional[Any]:
+    """Read JSON from a file when it exists."""
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _slugify(value: str) -> str:
+    """Convert a project name into a storage-safe key using the shared helper."""
     return scans._slugify(value)
 
 
 def _is_allowed_file(path: Path) -> bool:
+    """Check whether a file has a supported extension and safe size."""
     if not path.is_file():
         return False
     if path.suffix.lower() not in ALLOWED_EXTENSIONS:
@@ -62,6 +66,7 @@ def _is_allowed_file(path: Path) -> bool:
 
 
 def _has_supported_file(input_dir: Path) -> bool:
+    """Check whether the input folder contains at least one supported source file."""
     return any(
         p.is_file() and p.suffix.lower() in ALLOWED_EXTENSIONS
         for p in input_dir.rglob("*")
@@ -69,7 +74,9 @@ def _has_supported_file(input_dir: Path) -> bool:
 
 
 def _ingest_extracted_tree(extract_dir: Path, input_dir: Path) -> Dict[str, Any]:
+    """Copy supported files from an extracted archive into the scan input folder."""
     def effective_root(root: Path) -> Path:
+        """Remove a single unnecessary wrapper folder from an extracted archive."""
         try:
             children = [c for c in root.iterdir() if c.name not in EXCLUDE_DIRS]
         except OSError:
@@ -119,11 +126,13 @@ def _ingest_extracted_tree(extract_dir: Path, input_dir: Path) -> Dict[str, Any]
 
 
 def _save_ingestion(scan_path: Path, summary: Dict[str, Any]) -> None:
+    """Save the ingestion summary for a scan."""
     _write_json(scan_path / "raw" / "ingestion.json", summary)
 
 
 @router.post("/scans/{scan_id}/paste")
 def paste_code(scan_id: str, payload: PastePayload) -> Dict[str, Any]:
+    """Save pasted source code into the selected scan."""
     scan_path = BASE_STORAGE / scan_id
     if not scan_path.exists():
         raise HTTPException(status_code=404, detail="Scan not found")
@@ -146,6 +155,7 @@ def paste_code(scan_id: str, payload: PastePayload) -> Dict[str, Any]:
 
 @router.post("/scans/{scan_id}/upload_zip")
 def upload_zip(scan_id: str, file: UploadFile = File(...)) -> Dict[str, Any]:
+    """Extract a ZIP file and keep only supported source files."""
     scan_path = BASE_STORAGE / scan_id
     if not scan_path.exists():
         raise HTTPException(status_code=404, detail="Scan not found")
@@ -182,6 +192,7 @@ def upload_zip(scan_id: str, file: UploadFile = File(...)) -> Dict[str, Any]:
 
 @router.post("/scans/{scan_id}/github")
 def ingest_github(scan_id: str, payload: GitHubPayload) -> Dict[str, Any]:
+    """Download a GitHub repository, extract it, and keep supported source files."""
     scan_path = BASE_STORAGE / scan_id
     if not scan_path.exists():
         raise HTTPException(status_code=404, detail="Scan not found")
@@ -229,6 +240,7 @@ def start_scan(
     project_name: Optional[str] = Query(default=None),
     project_key: Optional[str] = Query(default=None),
 ) -> Dict[str, Any]:
+    """Validate the scan input, run analyzers, and return the scan result."""
     scan_path = BASE_STORAGE / scan_id
     if not scan_path.exists():
         raise HTTPException(status_code=404, detail="Scan not found")
