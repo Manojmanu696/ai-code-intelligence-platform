@@ -19,17 +19,20 @@ from app.services.ai.generator import generate_ai_outputs
 
 
 def _read_json(p: Path) -> Optional[Any]:
+    """Read JSON from a file if the file exists."""
     if not p.exists():
         return None
     return json.loads(p.read_text(encoding="utf-8"))
 
 
 def _write_json(p: Path, data: Any) -> None:
+    """Create parent folders and write data as formatted JSON."""
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def _to_scan_rel_path(path_str: str, scan_path: Path) -> str:
+    """Convert an absolute scan file path into a relative project path."""
     if not path_str:
         return path_str
     try:
@@ -43,6 +46,7 @@ def _to_scan_rel_path(path_str: str, scan_path: Path) -> str:
 
 
 def postprocess_scan(scan_path: Path) -> Dict[str, Any]:
+    """Combine analyzer reports, metrics, score, AI output, and history."""
     raw_dir = scan_path / "raw"
     norm_dir = scan_path / "normalized"
     metrics_dir = scan_path / "metrics"
@@ -93,6 +97,7 @@ def postprocess_scan(scan_path: Path) -> Dict[str, Any]:
 
 
 def run_tools_for_scan(scan_path: Path) -> Dict[str, Any]:
+    """Run all configured static analyzers and then postprocess the scan."""
     input_dir = scan_path / "input"
     raw_dir = scan_path / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
