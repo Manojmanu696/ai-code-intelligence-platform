@@ -16,7 +16,11 @@ from app.services.pipeline.simple_pipeline import run_tools_for_scan
 router = APIRouter()
 
 EXCLUDE_DIRS = set(scans.EXCLUDE_DIRS)
-ALLOWED_EXTENSIONS = {".py", ".java"}
+ALLOWED_EXTENSIONS = {
+    ".py", ".java",
+    ".c", ".h",
+    ".cc", ".cpp", ".cxx", ".hh", ".hpp", ".hxx",
+}
 MAX_FILE_SIZE_BYTES = scans.MAX_FILE_SIZE_BYTES
 BASE_STORAGE = scans.BASE_STORAGE
 
@@ -128,7 +132,10 @@ def paste_code(scan_id: str, payload: PastePayload) -> Dict[str, Any]:
     if filename.startswith("/") or filename.startswith("..") or "/.." in filename:
         raise HTTPException(status_code=400, detail="Invalid filename")
     if Path(filename).suffix.lower() not in ALLOWED_EXTENSIONS:
-        raise HTTPException(status_code=400, detail="Only .py and .java files are supported")
+        raise HTTPException(
+            status_code=400,
+            detail="Only .py, .java, .c, .h, .cc, .cpp, .cxx, .hh, .hpp, and .hxx files are supported",
+        )
 
     target = scan_path / "input" / filename
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -233,7 +240,7 @@ def start_scan(
     if not input_dir.exists() or not _has_supported_file(input_dir):
         _write_json(
             raw_dir / "runner_warnings.json",
-            {"error": "No supported source files found (.py or .java)"},
+            {"error": "No supported source files found (.py, .java, .c, .h, .cc, .cpp, .cxx, .hh, .hpp, .hxx)"},
         )
         return {"scan_id": scan_id, "status": "FAILED", "reason": "NO_SUPPORTED_FILES"}
 
