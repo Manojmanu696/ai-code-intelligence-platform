@@ -698,9 +698,9 @@ The architecture also demonstrates separation of concerns between **analysis**, 
 
 ## 👥 Project Contributors
 
-- Bhuvan Kumar R (Team Leader)
-- Manoj K P
 - Amul Raj Y
+- Bhuvan Kumar R
+- Manoj K P
 - Praful P
 
 ---
