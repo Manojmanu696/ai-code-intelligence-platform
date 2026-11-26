@@ -698,10 +698,11 @@ The architecture also demonstrates separation of concerns between **analysis**, 
 
 ## 👥 Project Contributors
 
-- Amul Raj Y
-- Bhuvan Kumar R
 - Manoj K P
 - Praful P
+- Bhuvan Kumar R
+- Amul Raj Y
+  
 
 ---
 
